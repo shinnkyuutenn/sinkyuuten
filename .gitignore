@@ -1,3 +1,21 @@
+# 依存関係
+node_modules/
+
+# ビルド出力
+dist/
+
+# ログファイル
+*.log
+npm-debug.log*
+
+# エディタ設定
+.vscode/
+.idea/
+
+# OS生成ファイル
 .DS_Store
-.DS_Store
-.DS_Store
+Thumbs.db
+
+# 環境変数
+.env
+.env.local
