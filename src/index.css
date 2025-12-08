@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: #020617;
+}
+
+/* 隐藏 Google Maps 的控件和文字 */
+.gmnoprint,
+a[href^="http://maps.google.com/maps"],
+a[href^="https://maps.google.com/maps"],
+.gm-style-cc,
+.gm-style a[title="Terms of Use"],
+.gm-style a[title="Report a map error"] {
+  display: none !important;
+}
+
+/* 隐藏 Google logo */
+.gm-style .gm-style-cc {
+  display: none !important;
+}
+
+/* 隐藏右下角的键盘快捷键链接等 */
+.gm-bundled-control {
+  display: none !important;
+}
+
