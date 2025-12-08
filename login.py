@@ -3,12 +3,13 @@ import psycopg2.extras
 import base64
 import hashlib
 
-from get_db import get_db 
+from db import get_connection   # ← あなたの db.py を使う
 
 auth_bp = Blueprint("auth", __name__)
 
 
 def check_password(password, stored_hash):
+    """ハッシュ化されたパスワードを検証"""
     algo, iterations, salt, hashed = stored_hash.split('$')
     iterations = int(iterations)
 
@@ -33,12 +34,11 @@ def login():
     email = request.form.get("email")
     password = request.form.get("password")
 
-    db = get_db()
+    db = get_connection()
     with db:
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
-    db.close()
 
     if user is None:
         return "メールが間違っています"
@@ -46,6 +46,7 @@ def login():
     if not check_password(password, user["password_hash"]):
         return "パスワードが違います"
 
+    # ログイン成功
     session["user_id"] = user["id"]
     session["user_name"] = user["name"]
 
@@ -65,4 +66,5 @@ def new_login():
 
     print(name, email, password)
     return redirect("/login")
+
 
