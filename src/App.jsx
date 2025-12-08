@@ -1,5 +1,8 @@
+// ライブラリとコンポーネントのインポート
 import { useState } from 'react';
 import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+
+// 画像とアイコンのインポート
 import heroImg from './assets/images/ui/Top Banner.jpg';
 import mumbaiImg from './assets/images/ui/Mumbai.jpg';
 import hyderabadImg from './assets/images/ui/Hyderabad.jpg';
@@ -28,17 +31,20 @@ import hotelIcon from './assets/icons/hotel_icon_1.png';
 import spotIcon from './assets/icons/spot_icon_1.png';
 import tripadvisorIcon from './assets/icons/tripadvisor_icon_1.png';
 
+// 都市カードデータ
 const cityCards = [
   { id: 'bombay', title: 'Bombay', image: mumbaiImg },
   { id: 'hyderabad', title: 'Hyderabad', image: delhiImg },
 ];
 
+// ロックされたセクション
 const lockedSections = [
   { id: 'personal', title: 'あなたの感性にあった口コミ' },
   { id: 'latest', title: '最新の口コミ' },
   { id: 'article', title: '自作記事' },
 ];
 
+// メニュー項目
 const menuItems = [
   { id: 'home', label: 'ホーム', icon: homeIcon },
   { id: 'map', label: 'マップ', icon: mapIcon },
@@ -46,6 +52,7 @@ const menuItems = [
   { id: 'profile', label: '個人情報', icon: profileIcon },
 ];
 
+// フィルターカテゴリ
 const filterCategories = [
   { id: 'spiciness', label: '辛さ', icon: spiceIcon, activeIcon: spiceIconActive, max: 5 },
   { id: 'cleanliness', label: '清潔度', icon: cleanlinessIcon, activeIcon: cleanlinessIconActive, max: 5 },
@@ -53,18 +60,21 @@ const filterCategories = [
   { id: 'crowd', label: '混雑度', icon: crowdIcon, activeIcon: crowdIconActive, max: 5 },
 ];
 
+// 場所の種類
 const placeTypes = [
   { id: 'restaurant', label: '飲食店', icon: restaurantIcon },
   { id: 'hotel', label: 'ホテル', icon: hotelIcon },
   { id: 'spot', label: 'スポット', icon: spotIcon },
 ];
 
+// 都市リスト
 const cities = [
   { id: 'hyderabad', name: 'ハイデラバード' },
   { id: 'mumbai', name: 'ムンバイ' },
   { id: 'delhi', name: 'ニューデリー' },
 ];
 
+// 都市の座標
 const cityLocations = {
   hyderabad: { lat: 17.385044, lng: 78.486671 },
   mumbai: { lat: 19.076090, lng: 72.877426 },
@@ -75,36 +85,50 @@ const cityLocations = {
 function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType }) {
   if (!isOpen) return null;
 
+  // フィルター項目のレンダリング
+  const renderFilterItem = (category) => {
+    const isActive = filters[category.id] > 0;
+    return (
+      <div className={`flex-1 rounded-lg p-3 flex flex-col gap-2 transition-colors ${isActive ? 'bg-violet-500' : 'bg-gray-200'}`}>
+        <div className="flex items-center gap-2">
+          <img src={isActive ? category.activeIcon : category.icon} alt={category.label} className="h-5 w-5 object-contain" />
+          <span className={`text-xs transition-colors ${isActive ? 'text-white' : 'text-gray-600'}`}>{category.label}</span>
+          <span className={`font-medium text-lg transition-colors ml-auto ${isActive ? 'text-white' : 'text-gray-600'}`}>{filters[category.id]}</span>
+        </div>
+        <input 
+          type="range" 
+          min="0" 
+          max={category.max} 
+          value={filters[category.id]} 
+          onChange={(e) => onFilterChange(category.id, parseInt(e.target.value))} 
+          className="w-full" 
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl w-full max-w-md p-6 space-y-6 shadow-2xl relative">
+        <button 
+          onClick={onClose} 
+          className="absolute top-4 right-5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1.5 transition-colors" 
+          aria-label="閉じる"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 4L16 16M16 4L4 16" />
+          </svg>
+        </button>
         <h2 className="text-center font-bold text-base text-slate-900">辛さ、清潔度、快適度、混雑度から探す</h2>
 
         <div className="space-y-3">
           {filterCategories.map((category, index) => {
-            const isFirst = index % 2 === 0;
-            if (isFirst) {
+            if (index % 2 === 0) {
               const nextCategory = filterCategories[index + 1];
               return (
                 <div key={category.id} className="flex gap-3">
-                  <div className={`flex-1 rounded-lg p-3 flex flex-col gap-2 transition-colors ${filters[category.id] > 0 ? 'bg-violet-500' : 'bg-gray-200'}`}>
-                    <div className="flex items-center gap-2">
-                      <img src={filters[category.id] > 0 ? category.activeIcon : category.icon} alt={category.label} className="h-5 w-5 object-contain" />
-                      <span className={`text-xs transition-colors ${filters[category.id] > 0 ? 'text-white' : 'text-gray-600'}`}>{category.label}</span>
-                      <span className={`font-medium text-lg transition-colors ml-auto ${filters[category.id] > 0 ? 'text-white' : 'text-gray-600'}`}>{filters[category.id]}</span>
-                    </div>
-                    <input type="range" min="0" max={category.max} value={filters[category.id]} onChange={(e) => onFilterChange(category.id, parseInt(e.target.value))} className="w-full" />
-                  </div>
-                  {nextCategory && (
-                    <div className={`flex-1 rounded-lg p-3 flex flex-col gap-2 transition-colors ${filters[nextCategory.id] > 0 ? 'bg-violet-500' : 'bg-gray-200'}`}>
-                      <div className="flex items-center gap-2">
-                        <img src={filters[nextCategory.id] > 0 ? nextCategory.activeIcon : nextCategory.icon} alt={nextCategory.label} className="h-5 w-5 object-contain" />
-                        <span className={`text-xs transition-colors ${filters[nextCategory.id] > 0 ? 'text-white' : 'text-gray-600'}`}>{nextCategory.label}</span>
-                        <span className={`font-medium text-lg transition-colors ml-auto ${filters[nextCategory.id] > 0 ? 'text-white' : 'text-gray-600'}`}>{filters[nextCategory.id]}</span>
-                      </div>
-                      <input type="range" min="0" max={nextCategory.max} value={filters[nextCategory.id]} onChange={(e) => onFilterChange(nextCategory.id, parseInt(e.target.value))} className="w-full" />
-                    </div>
-                  )}
+                  {renderFilterItem(category)}
+                  {nextCategory && renderFilterItem(nextCategory)}
                 </div>
               );
             }
@@ -174,19 +198,27 @@ function SideMenu({ isOpen, onClose, onNavigate }) {
 }
 
 function App() {
+  // Google Maps API読み込み
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: 'AIzaSyCf_VRFHEmNuNbfalEifqsiVwJ21sasdtg',
     language: 'ja',
   });
 
+  // ページ状態
   const [currentPage, setCurrentPage] = useState('home');
   const [previousPage, setPreviousPage] = useState('home');
+  
+  // 地図状態
   const [mapLocation, setMapLocation] = useState({ lat: 17.385044, lng: 78.486671 });
+  
+  // UI状態
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isCitySelectOpen, setIsCitySelectOpen] = useState(false);
   const [isUrlSubmitOpen, setIsUrlSubmitOpen] = useState(false);
+  
+  // フィルター状態
   const [restaurantUrl, setRestaurantUrl] = useState('');
   const [selectedType, setSelectedType] = useState('restaurant');
   const [selectedCity, setSelectedCity] = useState(null);
@@ -196,31 +228,86 @@ function App() {
     comfort: 0,
     crowd: 0,
   });
+  
+  // ユーザー状態
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userPreferences, setUserPreferences] = useState({
     spiceTolerance: null,
     cleanliness: null,
     comfort: null,
     crowd: null,
   });
+  
+  // 登録フォーム状態
+  const [signupForm, setSignupForm] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+  const [passwordError, setPasswordError] = useState('');
 
+  // フィルター変更
   const handleFilterChange = (id, value) => setFilters(prev => ({ ...prev, [id]: value }));
+  
+  // 都市選択
   const handleCitySelect = (city) => { setSelectedCity(city); setIsCitySelectOpen(false); };
+  
+  // フィルターリセット
   const resetFilters = () => {
     setFilters({ spiciness: 0, cleanliness: 0, comfort: 0, crowd: 0 });
     setSelectedCity(null);
     setSelectedType('restaurant');
     setIsCitySelectOpen(false);
   };
+  
+  // フィルターパネル閉じる
   const handleCloseFilter = () => { setIsFilterOpen(false); resetFilters(); };
+  
+  // メニューナビゲーション
   const handleMenuNavigate = (pageId) => {
-    if (pageId === 'home' || pageId === 'map') setCurrentPage(pageId);
+    if (pageId === 'home' || pageId === 'map') {
+      setCurrentPage(pageId);
+    } else if (pageId === 'profile' && !isLoggedIn) {
+      setPreviousPage(currentPage);
+      setCurrentPage('login');
+    }
     setIsMenuOpen(false);
   };
-
+  
+  // 現在の都市取得
   const getCurrentCity = () => {
     if (Math.abs(mapLocation.lat - 17.385044) < 0.01) return 'Hyderabad';
     if (Math.abs(mapLocation.lat - 19.076090) < 0.01) return 'Mumbai';
     return 'Hyderabad';
+  };
+  
+  // パスワード変更
+  const handlePasswordChange = (value) => {
+    setSignupForm(prev => ({ ...prev, password: value }));
+    if (signupForm.confirmPassword) {
+      setPasswordError(value !== signupForm.confirmPassword ? 'パスワードが一致しません' : '');
+    }
+  };
+  
+  // パスワード確認変更
+  const handleConfirmPasswordChange = (value) => {
+    setSignupForm(prev => ({ ...prev, confirmPassword: value }));
+    setPasswordError(value !== signupForm.password ? 'パスワードが一致しません' : '');
+  };
+  
+  // 登録送信
+  const handleSignupSubmit = () => {
+    if (signupForm.password !== signupForm.confirmPassword) {
+      setPasswordError('パスワードが一致しません');
+      return;
+    }
+    if (!signupForm.password) {
+      setPasswordError('パスワードを入力してください');
+      return;
+    }
+    setPasswordError('');
+    setCurrentPage('home');
   };
 
   // ログインページ
@@ -240,7 +327,7 @@ function App() {
           <div className="h-[29vh] bg-cover bg-center" style={{ backgroundImage: `url(${signupBg})` }} />
           <div className="px-8 pt-8 space-y-8">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">ログインID</label>
+              <label className="text-sm font-medium text-slate-700">ユーザー名またはメールアドレス</label>
               <input type="text" className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
             </div>
             <div className="space-y-2">
@@ -297,12 +384,45 @@ function App() {
             <div className="w-10"></div>
           </div>
           <div className="px-8 py-6 space-y-6">
-            {['ユーザー名', 'メールアドレス', 'パスワード'].map((label, i) => (
-              <div key={i} className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{label}</label>
-                <input type={i === 2 ? 'password' : i === 1 ? 'email' : 'text'} className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-300" />
-              </div>
-            ))}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">ユーザー名</label>
+              <input 
+                type="text" 
+                value={signupForm.username}
+                onChange={(e) => setSignupForm(prev => ({ ...prev, username: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">メールアドレス</label>
+              <input 
+                type="email" 
+                value={signupForm.email}
+                onChange={(e) => setSignupForm(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">パスワード</label>
+              <input 
+                type="password" 
+                value={signupForm.password}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">パスワード確認</label>
+              <input 
+                type="password" 
+                value={signupForm.confirmPassword}
+                onChange={(e) => handleConfirmPasswordChange(e.target.value)}
+                className={`w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 ${
+                  passwordError ? 'focus:ring-red-300' : 'focus:ring-violet-300'
+                }`}
+              />
+              {passwordError && <p className="text-sm text-red-500">{passwordError}</p>}
+            </div>
             
             <PreferenceSelector 
               title="あなたの辛さ耐性は？" 
@@ -373,7 +493,10 @@ function App() {
             />
 
             <div className="pt-6 pb-12">
-              <button onClick={() => setCurrentPage('home')} className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors">
+              <button 
+                onClick={handleSignupSubmit}
+                className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors"
+              >
                 ユーザー登録
               </button>
             </div>
@@ -464,7 +587,15 @@ function App() {
                 <div className="p-6 space-y-6">
                   <p className="text-sm text-slate-700 leading-relaxed">気になるレストラン・ホテル・スポットを見つけてワクワクする詳細ページのURLを管理者さんにポイっと送ってくださいね!</p>
                   <input type="url" value={restaurantUrl} onChange={(e) => setRestaurantUrl(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-violet-500 focus:outline-none transition-colors" />
-                  <button onClick={() => { console.log('URL送信:', restaurantUrl); alert('URL送信完了！'); setRestaurantUrl(''); setIsUrlSubmitOpen(false); }} className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2">
+                  <button 
+                    onClick={() => { 
+                      console.log('URL送信:', restaurantUrl); 
+                      alert('URL送信完了！'); 
+                      setRestaurantUrl(''); 
+                      setIsUrlSubmitOpen(false); 
+                    }} 
+                    className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2"
+                  >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
                     </svg>
@@ -505,17 +636,27 @@ function App() {
 
         <div className="space-y-4 bg-white px-8 pb-10 pt-12">
           <div className="space-y-3">
-            <div onClick={() => {
-              if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                  (position) => { setMapLocation({ lat: position.coords.latitude, lng: position.coords.longitude }); setCurrentPage('map'); },
-                  () => { setMapLocation(cityLocations.hyderabad); setCurrentPage('map'); }
-                );
-              } else {
-                setMapLocation(cityLocations.hyderabad);
-                setCurrentPage('map');
-              }
-            }} className="h-40 rounded-xl bg-cover bg-center shadow-[0_18px_35px_rgba(15,23,42,0.15)] cursor-pointer hover:shadow-[0_20px_40px_rgba(15,23,42,0.2)] transition-shadow" style={{ backgroundImage: `url(${hyderabadImg})` }}>
+            <div 
+              onClick={() => {
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => { 
+                      setMapLocation({ lat: position.coords.latitude, lng: position.coords.longitude }); 
+                      setCurrentPage('map'); 
+                    },
+                    () => { 
+                      setMapLocation(cityLocations.hyderabad); 
+                      setCurrentPage('map'); 
+                    }
+                  );
+                } else {
+                  setMapLocation(cityLocations.hyderabad);
+                  setCurrentPage('map');
+                }
+              }} 
+              className="h-40 rounded-xl bg-cover bg-center shadow-[0_18px_35px_rgba(15,23,42,0.15)] cursor-pointer hover:shadow-[0_20px_40px_rgba(15,23,42,0.2)] transition-shadow" 
+              style={{ backgroundImage: `url(${hyderabadImg})` }}
+            >
               <div className="flex h-full items-center justify-center rounded-3xl bg-black/35">
                 <p className="text-lg font-semibold text-white tracking-widest">現在地周辺</p>
               </div>
@@ -536,7 +677,15 @@ function App() {
             {lockedSections.map((section) => (
               <div key={section.id} className="space-y-3">
                 <p className="text-sm font-medium text-slate-700">{section.title}</p>
-                <button className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]">
+                <button 
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      setPreviousPage('home');
+                      setCurrentPage('login');
+                    }
+                  }}
+                  className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
+                >
                   <img src={lockIcon} alt="Lock" className="h-4 w-4" />
                   <span className="font-medium">アカウント登録で表示</span>
                 </button>
