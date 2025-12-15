@@ -6,9 +6,6 @@ import secrets
 
 from db import get_connection   
 
-
-from get_db import get_db 
-
 auth_bp = Blueprint("auth", __name__)
 
 
