@@ -60,12 +60,13 @@ const filterCategories = [
   { id: 'crowd', label: '混雑度', icon: crowdIcon, activeIcon: crowdIconActive, max: 5 },
 ];
 
-// 場所の種類
+// 場所の種類　　ここ日本語に変更した
 const placeTypes = [
-  { id: 'restaurant', label: '飲食店', icon: restaurantIcon },
-  { id: 'hotel', label: 'ホテル', icon: hotelIcon },
-  { id: 'spot', label: 'スポット', icon: spotIcon },
+  { id: '飲食店', label: '飲食店' },
+  { id: 'ホテル', label: 'ホテル' },
+  { id: 'スポット', label: 'スポット' },
 ];
+
 
 // 都市リスト
 const cities = [
@@ -82,7 +83,7 @@ const cityLocations = {
 };
 
 // フィルターパネルコンポーネント
-function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType }) {
+function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType, onSearch }) {
   if (!isOpen) return null;
 
   // フィルター項目のレンダリング
@@ -159,10 +160,18 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
             </button>
           ))}
         </div>
-
-        <button onClick={onClose} className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors">
-          お店お検索する
+        
+        {/* 書き換えた */}
+        <button
+          onClick={() => {
+            onSearch();
+            onClose();
+          }}
+          className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors"
+        >
+          お店を検索する
         </button>
+
       </div>
     </div>
   );
@@ -204,6 +213,11 @@ function App() {
     googleMapsApiKey: 'AIzaSyCf_VRFHEmNuNbfalEifqsiVwJ21sasdtg',
     language: 'ja',
   });
+
+  // ▼ 既存の useState 群の近くに追加
+  const [keyword, setKeyword] = useState('');
+  const [shops, setShops] = useState([]);
+
 
   // ページ状態
   const [currentPage, setCurrentPage] = useState('home');
@@ -263,6 +277,31 @@ function App() {
   
   // フィルターパネル閉じる
   const handleCloseFilter = () => { setIsFilterOpen(false); resetFilters(); };
+
+  // お店検索　これ追加した！
+  const searchShops = async () => {
+    try {
+      const params = new URLSearchParams({
+        keyword,
+        shop_type: selectedType || '',
+        city: selectedCity?.id || '',
+        min_spicy: filters.spiciness,
+        min_clean: filters.cleanliness,
+        min_comfort: filters.comfort,
+        min_congestion: filters.crowd,
+      });
+
+      const res = await fetch(`http://localhost:5000/search_shops_json?${params}`);
+      const data = await res.json();
+      setShops(data);
+
+      // いまは確認用
+      console.log('検索結果:', data);
+    } catch (e) {
+      console.error('検索失敗', e);
+    }
+  };
+
   
   // メニューナビゲーション
   const handleMenuNavigate = (pageId) => {
@@ -513,7 +552,14 @@ function App() {
         <div className="mx-auto max-w-md min-h-screen flex flex-col relative">
           <div className="absolute top-32 inset-x-0 flex justify-center px-6 z-20">
             <div onClick={() => setIsFilterOpen(true)} className="flex w-full max-w-[280px] items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.15)] cursor-pointer">
-              <input type="text" placeholder="エリア・スポットを検索" className="flex-1 border-none bg-transparent text-sm text-slate-500 placeholder:text-slate-400 focus:outline-none pointer-events-none" readOnly />
+              {/* 書き換えた */}
+              <input
+                type="text"
+                placeholder="エリア・スポットを検索"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                className="flex-1 border-none bg-transparent text-sm text-slate-500 placeholder:text-slate-400 focus:outline-none"
+              />
               <img src={searchIcon} alt="Search" className="h-5 w-5 opacity-60" />
             </div>
           </div>
@@ -562,7 +608,21 @@ function App() {
           </div>
 
           <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
-          <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType} />
+          
+          {/* 書き換えた */}
+          <FilterPanel
+            isOpen={isFilterOpen}
+            onClose={handleCloseFilter}
+            filters={filters}
+            onFilterChange={handleFilterChange}
+            selectedCity={selectedCity}
+            onCitySelect={handleCitySelect}
+            isCitySelectOpen={isCitySelectOpen}
+            setIsCitySelectOpen={setIsCitySelectOpen}
+            selectedType={selectedType}
+            setSelectedType={setSelectedType}
+            onSearch={searchShops}   // ← 追加
+          />
 
           <button onClick={() => setIsUrlSubmitOpen(true)} className="absolute bottom-40 right-6 z-20 bg-violet-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:bg-violet-600 transition-colors" aria-label="スポット追加">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -628,7 +688,14 @@ function App() {
           </div>
           <div className="absolute inset-x-0 bottom-[-14px] flex justify-center px-6">
             <div onClick={() => setIsFilterOpen(true)} className="flex w-full max-w-[280px] items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.15)] cursor-pointer">
-              <input type="text" placeholder="エリア・スポットを検索" className="flex-1 border-none bg-transparent text-sm text-slate-500 placeholder:text-slate-400 focus:outline-none pointer-events-none" readOnly />
+              {/* 書き換えた 　input*/}
+              <input
+                type="text"
+                placeholder="エリア・スポットを検索"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                className="flex-1 border-none bg-transparent text-sm text-slate-500 placeholder:text-slate-400 focus:outline-none"
+              />
               <img src={searchIcon} alt="Search" className="h-5 w-5 opacity-60" />
             </div>
           </div>
@@ -695,8 +762,26 @@ function App() {
         </div>
 
         <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
-        <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType} />
+        
+        {/* 書き換えた */}
+        <FilterPanel
+          isOpen={isFilterOpen}
+          onClose={handleCloseFilter}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          selectedCity={selectedCity}
+          onCitySelect={handleCitySelect}
+          isCitySelectOpen={isCitySelectOpen}
+          setIsCitySelectOpen={setIsCitySelectOpen}
+          selectedType={selectedType}
+          setSelectedType={setSelectedType}
+          onSearch={searchShops}   // ← 追加
+        />
       </div>
+
+      <pre className="text-xs p-2 bg-slate-100 max-h-40 overflow-auto">
+        {JSON.stringify(shops, null, 2)}
+      </pre>
     </main>
   );
 }

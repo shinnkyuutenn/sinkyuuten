@@ -1,75 +1,52 @@
-from flask import Flask, render_template, redirect, session, request
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import psycopg2.extras
 
-from login import auth_bp
-from db import get_connection   # ← db.py の get_connection を使用
+from db import get_connection
 from models import search_shops
 
 app = Flask(__name__)
+CORS(app)
 app.secret_key = "your-secret-key"
 
-# Blueprint 登録
-app.register_blueprint(auth_bp)
+
+def to_int_or_none(value):
+    try:
+        return int(value) if value not in (None, "") else None
+    except ValueError:
+        return None
 
 
-@app.route("/", methods=["GET", "POST"])
-def index():
+@app.route("/search_shops_json", methods=["GET"])
+def search_shops_json():
+    print("🔥 検索APIが呼ばれました")
+    print("args:", request.args)
+    keyword = request.args.get("keyword", '')
+    shop_type = request.args.get("shop_type", '')
+    city = request.args.get("city", '')
 
-    # ログインしていない場合はログイン画面へ
-    if "user_id" not in session:
-        return redirect("/login")
+    min_spicy = to_int_or_none(request.args.get("min_spicy", 0))
+    min_clean = to_int_or_none(request.args.get("min_clean", 0))
+    min_comfort = to_int_or_none(request.args.get("min_comfort", 0))
+    min_congestion = to_int_or_none(request.args.get("min_congestion", 0))
 
-    # --- ユーザー情報取得 ----------------------------------------------------
-    query_users = """
-        SELECT id, email, spicy_level, clean_level, comfortable_level,
-               congestion_level, name
-        FROM users
-        WHERE id = %s
-    """
-
-    db = get_connection()
-    with db:
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(query_users, (session["user_id"],))
-        users = cur.fetchall()
-    db.close()
-
-    # --- 店舗検索用 ----------------------------------------------------------
-    shops = []
-    keyword = None
-
-    if request.method == "POST":
-        keyword = request.form.get("keyword")
-        shop_type = request.form.get("shop_type")
-        min_spicy = request.form.get("min_spicy")
-        min_clean = request.form.get("min_clean")
-        min_comfort = request.form.get("min_comfort")
-        min_congestion = request.form.get("min_congestion")
-
-        shops = search_shops(
-            shop_type=shop_type,
-            min_spicy=int(min_spicy) if min_spicy else None,
-            min_clean=int(min_clean) if min_clean else None,
-            min_comfort=int(min_comfort) if min_comfort else None,
-            min_congestion=int(min_congestion) if min_congestion else None,
-            keyword=keyword
-        )
-
-    return render_template(
-        "index.html",
-        shops=shops,
+    shops = search_shops(
         keyword=keyword,
-        users=users,
-        username=session.get("user_name")
+        shop_type=shop_type,
+        city=city,
+        min_spicy=min_spicy,
+        min_clean=min_clean,
+        min_comfort=min_comfort,
+        min_congestion=min_congestion,
     )
 
+    return jsonify(shops)
 
-@app.route("/back", methods=["POST"])
-def back():
-    return redirect("/login")
+
+@app.route("/")
+def health():
+    return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
