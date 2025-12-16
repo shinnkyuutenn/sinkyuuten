@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新規登録</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+    <main>
+        <section class="section">
+            <div class="container">
+                <form method="POST" action="/new_login">
+
+                    <div class="field">
+                        <input class="input" type="text" name="name" placeholder="ユーザー名（3文字以上）"
+                            value="{{ form and form['name'] }}">
+                        {% if error_user %}
+                        <div style="color:red;">ユーザー名が短すぎます</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="field">
+                        <input class="input" type="email" name="email" placeholder="メールアドレス"
+                            value="{{ form and form['email'] }}">
+                        {% if error_email %}
+                        <div style="color:red;">メールアドレスの形式が正しくありません。</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- パスワード -->
+                    <div class="field">
+                        <input class="input" type="password" name="password" placeholder="パスワード">
+                        {% if error_password %}
+                        <div style="color:red;">パスワードは必須です。</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- パスワード確認 -->
+                    <div class="field">
+                        <input class="input" type="password" name="password_confirmation" placeholder="パスワード確認">
+                        {% if error_confirm %}
+                        <div style="color:red;">パスワードが一致しません。</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="field">
+                        <label class="label">スパイシーレベル</label>
+                    
+                        <div class="spicy-buttons">
+                            {% for i in range(1, 6) %}
+                            <label class="spicy-btn">
+                                <input type="radio" name="spicy_level" value="{{ i }}">
+                                {{ i }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    
+                        {% if error_spicy %}
+                        <div style="color:red;">スパイシーレベルを選択してください。</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="field">
+                        <label class="label">清潔レベル</label>
+                    
+                        <div class="clean-buttons">
+                            {% for i in range(1, 6) %}
+                            <label class="clean-btn">
+                                <input type="radio" name="clean_level" value="{{ i }}">
+                                {{ i }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    
+                        {% if error_clean %}
+                        <div style="color:red;">清潔レベルを選択してください。</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="field">
+                        <label class="label">快適レベル</label>
+                    
+                        <div class="comfortable-buttons">
+                            {% for i in range(1, 6) %}
+                            <label class="comfortable-btn">
+                                <input type="radio" name="comfortable_level" value="{{ i }}">
+                                {{ i }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    
+                        {% if error_comfortable %}
+                        <div style="color:red;">快適レベルを選択してください。</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="field">
+                        <label class="label">混雑苦手レベル</label>
+                    
+                        <div class="congestion-buttons">
+                            {% for i in range(1, 6) %}
+                            <label class="congestion-btn">
+                                <input type="radio" name="congestion_level" value="{{ i }}">
+                                {{ i }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    
+                        {% if error_congestion %}
+                        <div style="color:red;">混雑苦手レベルを選択してください。</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- 登録ボタン -->
+                    <div class="field">
+                        <input type="submit" value="登録" class="button is-primary">
+                    </div>
+                </form>
+
+                <!-- 戻るボタン -->
+                <form method="POST" action="/back">
+                    <button class="button">戻る</button>
+                </form>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>
+
