@@ -1,6 +1,6 @@
 // ライブラリとコンポーネントのインポート
-import { useState } from 'react';
-import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+import { useState, useEffect } from 'react';
+import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
 // 画像とアイコンのインポート
 import heroImg from './assets/images/ui/Top Banner.jpg';
@@ -26,6 +26,10 @@ import comfortIcon from './assets/icons/comfort_icon_1.png';
 import comfortIconActive from './assets/icons/comfort_icon_2.png';
 import crowdIcon from './assets/icons/crowd_icon_1.png';
 import crowdIconActive from './assets/icons/crowd_icon_2.png';
+import spiceIconDetail from './assets/icons/spice_icon_3.png';
+import cleanlinessIconDetail from './assets/icons/cleanliness_icon_3.png';
+import comfortIconDetail from './assets/icons/comfort_icon_3.png';
+import crowdIconDetail from './assets/icons/crowd_icon_3.png';
 import restaurantIcon from './assets/icons/restaurant_icon_1.png';
 import hotelIcon from './assets/icons/hotel_icon_1.png';
 import spotIcon from './assets/icons/spot_icon_1.png';
@@ -33,7 +37,7 @@ import tripadvisorIcon from './assets/icons/tripadvisor_icon_1.png';
 
 // 都市カードデータ
 const cityCards = [
-  { id: 'bombay', title: 'Bombay', image: mumbaiImg },
+  { id: 'bombay', title: 'Mumbai', image: mumbaiImg },
   { id: 'hyderabad', title: 'Hyderabad', image: delhiImg },
 ];
 
@@ -78,11 +82,25 @@ const cities = [
 const cityLocations = {
   hyderabad: { lat: 17.385044, lng: 78.486671 },
   mumbai: { lat: 19.076090, lng: 72.877426 },
-  bombay: { lat: 19.076090, lng: 72.877426 },
+  delhi: { lat: 28.613939, lng: 77.209021 },
+};
+
+// API 基础 URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+// 根据城市 ID 获取坐标的辅助函数
+const getCityCoordinates = (cityId) => {
+  const cityCoords = {
+    hyderabad: { lat: 17.385044, lng: 78.486671 },
+    mumbai: { lat: 19.076090, lng: 72.877426 },
+    delhi: { lat: 28.613939, lng: 77.209021 },
+  };
+  // 如果城市 ID 不存在，返回海得拉巴的坐标作为默认值
+  return cityCoords[cityId] || cityCoords.hyderabad;
 };
 
 // フィルターパネルコンポーネント
-function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType }) {
+function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType, onSearch }) {
   if (!isOpen) return null;
 
   // フィルター項目のレンダリング
@@ -160,8 +178,8 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
           ))}
         </div>
 
-        <button onClick={onClose} className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors">
-          お店お検索する
+        <button onClick={() => { onSearch && onSearch(); onClose(); }} className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors">
+          お店を検索する
         </button>
       </div>
     </div>
@@ -199,11 +217,18 @@ function SideMenu({ isOpen, onClose, onNavigate }) {
 
 function App() {
   // Google Maps API読み込み
-  const { isLoaded } = useJsApiLoader({
+  const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: 'AIzaSyCf_VRFHEmNuNbfalEifqsiVwJ21sasdtg',
     language: 'ja',
   });
+
+  // 检查Google Maps加载错误
+  useEffect(() => {
+    if (loadError) {
+      console.error('Google Maps加载错误:', loadError);
+    }
+  }, [loadError]);
 
   // ページ状態
   const [currentPage, setCurrentPage] = useState('home');
@@ -220,7 +245,7 @@ function App() {
   
   // フィルター状態
   const [restaurantUrl, setRestaurantUrl] = useState('');
-  const [selectedType, setSelectedType] = useState('restaurant');
+  const [selectedType, setSelectedType] = useState('restaurant'); // 默认显示餐厅
   const [selectedCity, setSelectedCity] = useState(null);
   const [filters, setFilters] = useState({
     spiciness: 0,
@@ -228,6 +253,10 @@ function App() {
     comfort: 0,
     crowd: 0,
   });
+  
+  // 検索状態
+  const [keyword, setKeyword] = useState('');
+  const [shops, setShops] = useState([]);
   
   // ユーザー状態
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -246,6 +275,100 @@ function App() {
     confirmPassword: '',
   });
   const [passwordError, setPasswordError] = useState('');
+  
+  // レストランデータ状態
+  const [restaurants, setRestaurants] = useState([]);
+  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
+  const [restaurantsError, setRestaurantsError] = useState(null);
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
+
+   // お店検索　これ追加した！
+   const searchShops = async () => {
+    try {
+      console.log('検索開始:', { keyword, selectedType, selectedCity, filters });
+      
+      const params = new URLSearchParams({
+        keyword: keyword || '',
+        shop_type: selectedType || '',
+        city: selectedCity?.id || '',
+        min_spicy: filters.spiciness || 0,
+        min_clean: filters.cleanliness || 0,
+        min_comfort: filters.comfort || 0,
+        min_congestion: filters.crowd || 0,
+      });
+
+      console.log('検索URL:', `http://localhost:5000/search_shops_json?${params}`);
+      
+      const res = await fetch(`http://localhost:5001/search_shops_json?${params}`);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log('検索結果:', data);
+      console.log('検索結果数:', data?.length || 0);
+      
+      setShops(data || []);
+    } catch (e) {
+      console.error('検索失敗', e);
+      setShops([]);
+    }
+  };
+  // データベースからレストランデータを取得
+  useEffect(() => {
+    const fetchRestaurants = async () => {
+      setIsLoadingRestaurants(true);
+      setRestaurantsError(null);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/restaurants`);
+        if (!response.ok) {
+          throw new Error('データの取得に失敗しました');
+        }
+        const data = await response.json();
+        console.log('获取到的数据:', data);
+        console.log('数据类型统计:', {
+          restaurant: data.filter(r => r.shop_type === 'restaurant').length,
+          hotel: data.filter(r => r.shop_type === 'hotel').length,
+          spot: data.filter(r => r.shop_type === 'spot').length,
+          total: data.length
+        });
+        // 检查原始数据中的keywords
+        data.forEach(r => {
+          if (r.shop_type === 'hotel' || r.shop_type === 'spot') {
+            console.log('原始数据检查:', r.name, 'keywords:', r.keywords, '类型:', typeof r.keywords, '是否为数组:', Array.isArray(r.keywords), '长度:', r.keywords?.length);
+          }
+        });
+        const restaurantsWithPosition = data.map(restaurant => {
+          // 确保keywords字段正确保留 - 直接使用原始值，如果不存在或不是数组则使用空数组
+          const keywords = (restaurant.keywords && Array.isArray(restaurant.keywords)) ? restaurant.keywords : [];
+          const result = {
+            ...restaurant,
+            position: restaurant.latitude && restaurant.longitude 
+              ? { lat: restaurant.latitude, lng: restaurant.longitude }
+              : getCityCoordinates(restaurant.city_id),
+            keywords: keywords, // 确保keywords字段存在且为数组
+          };
+          if (restaurant.shop_type === 'hotel' || restaurant.shop_type === 'spot') {
+            console.log('处理后的数据:', restaurant.name, 'shop_type:', restaurant.shop_type, '原始keywords:', restaurant.keywords, '处理后keywords:', result.keywords, 'keywords类型:', typeof result.keywords, '是否为数组:', Array.isArray(result.keywords), '长度:', result.keywords.length);
+          }
+          return result;
+        });
+        setRestaurants(restaurantsWithPosition);
+      } catch (error) {
+        console.error('レストランデータ取得エラー:', error);
+        setRestaurantsError(error.message);
+        setRestaurants([]);
+      } finally {
+        setIsLoadingRestaurants(false);
+      }
+    };
+
+    // マップページまたはホームページでデータを取得
+    if (currentPage === 'map' || currentPage === 'home') {
+      fetchRestaurants();
+    }
+  }, [currentPage]);
 
   // フィルター変更
   const handleFilterChange = (id, value) => setFilters(prev => ({ ...prev, [id]: value }));
@@ -257,7 +380,7 @@ function App() {
   const resetFilters = () => {
     setFilters({ spiciness: 0, cleanliness: 0, comfort: 0, crowd: 0 });
     setSelectedCity(null);
-    setSelectedType('restaurant');
+    setSelectedType('restaurant'); // 重置为餐厅
     setIsCitySelectOpen(false);
   };
   
@@ -268,7 +391,7 @@ function App() {
   const handleMenuNavigate = (pageId) => {
     if (pageId === 'home' || pageId === 'map') {
       setCurrentPage(pageId);
-    } else if (pageId === 'profile' && !isLoggedIn) {
+    } else if ((pageId === 'profile' || pageId === 'favorites') && !isLoggedIn) {
       setPreviousPage(currentPage);
       setCurrentPage('login');
     }
@@ -530,7 +653,7 @@ function App() {
             </div>
           </button>
 
-          <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{ zIndex: 1 }}>
             {isLoaded ? (
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -553,7 +676,71 @@ function App() {
                     { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] }
                   ],
                 }}
-              />
+              >
+                {(() => {
+                  // 地图显示：不受筛选面板的selectedType影响，显示所有类型
+                  // 只根据selectedCity过滤（如果选择了城市）
+                  const filtered = restaurants.filter((restaurant) => {
+                    // 根据 selectedCity 过滤数据（如果选择了城市）
+                    if (selectedCity && restaurant.city_id !== selectedCity.id) {
+                      return false;
+                    }
+                    return true;
+                  });
+                  console.log('地图显示数据:', {
+                    total: restaurants.length,
+                    filtered: filtered.length,
+                    selectedCity: selectedCity?.id || '全部',
+                    types: filtered.reduce((acc, r) => {
+                      acc[r.shop_type] = (acc[r.shop_type] || 0) + 1;
+                      return acc;
+                    }, {})
+                  });
+                  return filtered;
+                })()
+                  .map((restaurant) => {
+                  const createCustomIcon = () => {
+                    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+                      const rating = restaurant.avg_rating?.toFixed(1) || '0.0';
+                      // 根据 shop_type 选择不同的颜色
+                      let fillColor = '#7c3aed'; // 默认紫色（餐厅）
+                      
+                      if (restaurant.shop_type === 'hotel') {
+                        fillColor = '#059669'; // 绿色（酒店）
+                      } else if (restaurant.shop_type === 'spot') {
+                        fillColor = '#dc2626'; // 红色（景点）
+                      } else {
+                        fillColor = '#7c3aed'; // 紫色（餐厅）
+                      }
+
+                      // 使用SVG图标（带评分和类型颜色）
+                      const svgIcon = `
+                        <svg width="40" height="50" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M20 0C8.954 0 0 8.954 0 20c0 15 20 30 20 30s20-15 20-30C40 8.954 31.046 0 20 0z" fill="${fillColor}"/>
+                          <circle cx="20" cy="20" r="8" fill="white"/>
+                          <text x="20" y="25" font-family="Arial, sans-serif" font-size="11" fill="${fillColor}" text-anchor="middle" font-weight="bold">${rating}</text>
+                        </svg>
+                      `;
+                      return {
+                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svgIcon),
+                        scaledSize: new window.google.maps.Size(40, 50),
+                        anchor: new window.google.maps.Point(20, 50),
+                      };
+                    }
+                    return undefined;
+                  };
+
+                  return (
+                    <Marker
+                      key={restaurant.id}
+                      position={restaurant.position}
+                      title={`${restaurant.name} - 评分: ${restaurant.avg_rating}`}
+                      icon={createCustomIcon()}
+                      onClick={() => setSelectedRestaurant(restaurant)}
+                    />
+                  );
+                })}
+              </GoogleMap>
             ) : (
               <div className="flex items-center justify-center h-full">
                 <p className="text-slate-500">地図を読み込み中...</p>
@@ -563,6 +750,194 @@ function App() {
 
           <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
           <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType} />
+          
+          {/* 餐厅详情卡片 */}
+          {selectedRestaurant && (
+            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out max-w-md mx-auto" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* 关闭按钮 */}
+              <button 
+                onClick={() => setSelectedRestaurant(null)}
+                className="absolute top-4 right-4 z-10 bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors"
+                aria-label="閉じる"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+
+              {/* 餐厅图片 - 来自数据库的 photo_url */}
+              <div className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-100 to-purple-200">
+                {(() => {
+                  // 处理多张图片（逗号分隔）或单张图片
+                  const photoUrl = selectedRestaurant.photo_url;
+                  console.log('图片URL检查:', {
+                    photoUrl: photoUrl,
+                    hasPhotoUrl: !!photoUrl,
+                    includesExample: photoUrl?.includes('example.com'),
+                    shopType: selectedRestaurant.shop_type,
+                    name: selectedRestaurant.name
+                  });
+                  
+                  if (!photoUrl || photoUrl.includes('example.com')) {
+                    return null;
+                  }
+                  // 如果是多张图片，取第一张
+                  let imageUrl = photoUrl.includes(',') ? photoUrl.split(',')[0].trim() : photoUrl;
+                  
+                  // 如果是HTTP的Google图片URL，尝试改为HTTPS
+                  if (imageUrl.startsWith('http://lh3.googleusercontent.com')) {
+                    imageUrl = imageUrl.replace('http://', 'https://');
+                  }
+                  
+                  console.log('使用的图片URL:', imageUrl);
+                  
+                  return (
+                    <img 
+                      src={imageUrl} 
+                      alt={selectedRestaurant.name}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      onError={(e) => {
+                        // 如果图片加载失败，隐藏img标签，显示占位符
+                        console.error('图片加载失败:', imageUrl, '错误:', e);
+                        e.target.style.display = 'none';
+                        const placeholder = e.target.nextElementSibling;
+                        if (placeholder) placeholder.style.display = 'flex';
+                      }}
+                      onLoad={() => {
+                        console.log('图片加载成功:', imageUrl);
+                      }}
+                    />
+                  );
+                })()}
+                {/* 占位符 - 当没有图片或图片加载失败时显示 */}
+                <div className={`absolute inset-0 flex items-center justify-center ${selectedRestaurant.photo_url && !selectedRestaurant.photo_url.includes('example.com') ? 'hidden' : 'flex'}`}>
+                  <div className="text-center">
+                    <svg className="w-16 h-16 mx-auto text-violet-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-violet-600 text-sm font-medium">{selectedRestaurant.name}</p>
+                  </div>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                <div className="absolute bottom-4 left-4 right-4">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-white text-xl font-bold">{selectedRestaurant.name}</h3>
+                    <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="2">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                      </svg>
+                      <span className="text-white text-sm font-semibold">{selectedRestaurant.avg_rating?.toFixed(1) || '0.0'}</span>
+                    </div>
+                    {/* 店铺类型 - 来自数据库的 shop_type */}
+                    {selectedRestaurant.shop_type && (
+                      <span className="bg-violet-500/80 text-white text-xs px-2 py-1 rounded-full">
+                        {selectedRestaurant.shop_type === 'restaurant' ? '飲食店' : 
+                         selectedRestaurant.shop_type === 'hotel' ? 'ホテル' : 
+                         selectedRestaurant.shop_type === 'spot' ? 'スポット' : selectedRestaurant.shop_type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center gap-1.5 py-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
+              </div>
+
+              <div className="px-6 pb-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: '辛さレベル', value: selectedRestaurant.spicy_level, icon: spiceIconDetail, alt: 'spicy' },
+                    { label: '清潔度', value: selectedRestaurant.clean_level, icon: cleanlinessIconDetail, alt: 'cleanliness' },
+                    { label: '快適度', value: selectedRestaurant.comfortable_level, icon: comfortIconDetail, alt: 'comfort' },
+                    { label: '混雑度', value: selectedRestaurant.congestion_level, icon: crowdIconDetail, alt: 'crowd' },
+                  ].map(({ label, value, icon, alt }) => (
+                    <div key={label} className="flex flex-col gap-1.5">
+                      <span className="text-xs text-gray-600 font-medium">{label}</span>
+                      <div className="flex gap-0.5 items-center">
+                        {[1, 2, 3, 4, 5].map((level) => {
+                          const isActive = level <= (value || 0);
+                          return (
+                            <img
+                              key={level}
+                              src={icon}
+                              alt={alt}
+                              className={`w-4 h-4 object-contain ${isActive ? 'opacity-100' : 'opacity-30'}`}
+                            />
+                          );
+                        })}
+                        <span className="ml-1.5 text-xs font-bold text-gray-700">{value || 0}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 关键词标签 */}
+              {(() => {
+                const hasKeywords = selectedRestaurant.keywords && Array.isArray(selectedRestaurant.keywords) && selectedRestaurant.keywords.length > 0;
+                console.log('关键词检查:', {
+                  hasKeywords: !!selectedRestaurant.keywords,
+                  isArray: Array.isArray(selectedRestaurant.keywords),
+                  length: selectedRestaurant.keywords?.length,
+                  keywords: selectedRestaurant.keywords,
+                  shopType: selectedRestaurant.shop_type,
+                  willShow: hasKeywords
+                });
+                return hasKeywords;
+              })() && (
+                <div className="px-6 pb-4">
+                  <p className="text-sm text-gray-600 mb-2 font-medium">キーワード</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedRestaurant.keywords.map((keyword, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200 hover:bg-violet-200 transition-colors"
+                      >
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 操作按钮 */}
+              <div className="px-6 pb-6 flex gap-3">
+                <button 
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      setPreviousPage('map');
+                      setCurrentPage('login');
+                    } else {
+                      // 收藏功能待实现
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-black text-white py-3 rounded-full font-medium hover:bg-gray-800 transition-colors"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                  </svg>
+                  <span>気になる</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    // 写评论功能待实现
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-violet-500 text-white py-3 rounded-full font-medium hover:bg-violet-600 transition-colors"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                  </svg>
+                  <span>独特口コミ書く</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           <button onClick={() => setIsUrlSubmitOpen(true)} className="absolute bottom-40 right-6 z-20 bg-violet-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:bg-violet-600 transition-colors" aria-label="スポット追加">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -589,7 +964,6 @@ function App() {
                   <input type="url" value={restaurantUrl} onChange={(e) => setRestaurantUrl(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-violet-500 focus:outline-none transition-colors" />
                   <button 
                     onClick={() => { 
-                      console.log('URL送信:', restaurantUrl); 
                       alert('URL送信完了！'); 
                       setRestaurantUrl(''); 
                       setIsUrlSubmitOpen(false); 
@@ -695,8 +1069,20 @@ function App() {
         </div>
 
         <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
-        <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType} />
+        <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType}  onSearch={searchShops}  />
       </div>
+      
+      {shops.length > 0 && (
+        <pre className="text-xs p-2 bg-slate-100 max-h-40 overflow-auto">
+          {JSON.stringify(shops, null, 2)}
+        </pre>
+      )}
+      {shops.length === 0 && (
+        <div className="text-xs p-2 bg-slate-100 text-gray-500">
+          検索結果がありません。検索を実行してください。
+        </div>
+      )}
+
     </main>
   );
 }
