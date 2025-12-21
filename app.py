@@ -4,10 +4,15 @@ import psycopg2.extras
 
 from db import get_connection
 from models import search_shops
+from login import auth_bp 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app,supports_credentials=True)
 app.secret_key = "your-secret-key"
+
+
+app.register_blueprint(auth_bp, url_prefix="/auth")
+
 
 
 def to_int_or_none(value):
