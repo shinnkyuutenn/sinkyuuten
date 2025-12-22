@@ -22,7 +22,7 @@ def to_int_or_none(value):
 
 @app.route("/search_shops_json", methods=["GET"])
 def search_shops_json():
-    # (debug logs removed)
+
     keyword = request.args.get("keyword", '')
     keywords = request.args.get("keywords", '')
     shop_type = request.args.get("shop_type", '')
