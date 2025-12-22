@@ -2,6 +2,43 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
+
+// Load .env locally without requiring an extra dependency.
+// This ensures the server actually uses NEON_DATABASE_URL in dev.
+function loadDotEnvIfPresent() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, 'utf8');
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const normalized = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
+    const idx = normalized.indexOf('=');
+    if (idx === -1) continue;
+    const key = normalized.slice(0, idx).trim();
+    let val = normalized.slice(idx + 1).trim();
+    // strip matching quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (key && process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+}
+
+function sanitizeDatabaseUrl(url) {
+  if (!url) return url;
+  // Some Neon URLs include channel_binding=require; remove it for broader client compatibility.
+  return url
+    .replace(/([?&])channel_binding=require(&|$)/, (m, sep, tail) => (tail ? sep : ''))
+    .replace('?&', '?')
+    .replace(/[?&]$/, '');
+}
+
+loadDotEnvIfPresent();
 
 const app = express();
 const port = 3001;
@@ -11,18 +48,27 @@ app.use(cors());
 app.use(express.json());
 
 // PostgreSQL 数据库连接配置
-// 请根据您的实际数据库配置修改这些值
-const pool = new Pool({
-  user: process.env.DB_USER || 'user',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'india_reviews',
-  password: process.env.DB_PASSWORD || '',
-  port: process.env.DB_PORT || 5432,
-});
+// 支持 Neon 数据库（优先使用连接字符串）和本地数据库
+const pool = new Pool(
+  process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
+    ? {
+        connectionString: sanitizeDatabaseUrl(process.env.NEON_DATABASE_URL || process.env.DATABASE_URL),
+        ssl: { rejectUnauthorized: false }  // Neon 需要 SSL
+      }
+    : {
+        user: process.env.DB_USER || 'user',
+        host: process.env.DB_HOST || 'localhost',
+        database: process.env.DB_NAME || 'india_reviews',
+        password: process.env.DB_PASSWORD || '',
+        port: process.env.DB_PORT || 5432,
+      }
+);
 
-// 测试数据库连接
+const DEBUG_LOGS = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+
+// 测试数据库连接（可选）
 pool.on('connect', () => {
-  console.log('数据库连接成功');
+  if (DEBUG_LOGS) console.log('数据库连接成功');
 });
 
 pool.on('error', (err) => {
@@ -35,8 +81,11 @@ app.get('/api/restaurants', async (req, res) => {
     const query = `
       SELECT 
         s.id, s.name, s.shop_type, s.spicy_level, s.clean_level, 
-        s.comfortable_level, s.congestion_level, s.avg_rating, 
-        s.photo_url, s.city_id, s.latitude, s.longitude,
+        s.comfortable_level, s.congestion_level,
+        (s.avg_rating)::float8 as avg_rating,
+        s.photo_url, s.city_id,
+        (s.latitude)::float8 as latitude,
+        (s.longitude)::float8 as longitude,
         COALESCE(
           json_agg(DISTINCT k.word) FILTER (WHERE k.word IS NOT NULL),
           '[]'::json
@@ -50,15 +99,14 @@ app.get('/api/restaurants', async (req, res) => {
       ORDER BY s.id
     `;
     const result = await pool.query(query);
-    
-    // 添加调试信息
-    console.log('查询结果总数:', result.rows.length);
-    const typeCount = result.rows.reduce((acc, row) => {
-      acc[row.shop_type] = (acc[row.shop_type] || 0) + 1;
-      return acc;
-    }, {});
-    console.log('数据类型统计:', typeCount);
-    console.log('所有shop_type值:', result.rows.map(r => ({ id: r.id, name: r.name, shop_type: r.shop_type })));
+    if (DEBUG_LOGS) {
+      console.log('查询结果总数:', result.rows.length);
+      const typeCount = result.rows.reduce((acc, row) => {
+        acc[row.shop_type] = (acc[row.shop_type] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('数据类型统计:', typeCount);
+    }
     
     res.json(result.rows);
   } catch (error) {
@@ -220,23 +268,6 @@ app.get('/api/keywords', async (req, res) => {
 // 健康检查端点
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
-});
-
-// 添加测试端点：检查数据库中的shop_type分布
-app.get('/api/debug/shop-types', async (req, res) => {
-  try {
-    const query = `
-      SELECT shop_type, COUNT(*) as count 
-      FROM public.shops 
-      GROUP BY shop_type
-      ORDER BY shop_type
-    `;
-    const result = await pool.query(query);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('查询shop_type错误:', error);
-    res.status(500).json({ error: '查询失败' });
-  }
 });
 
 app.listen(port, () => {

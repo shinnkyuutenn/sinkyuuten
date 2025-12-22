@@ -1,5 +1,5 @@
 // ライブラリとコンポーネントのインポート
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
 // 画像とアイコンのインポート
@@ -35,9 +35,9 @@ import hotelIcon from './assets/icons/hotel_icon_1.png';
 import spotIcon from './assets/icons/spot_icon_1.png';
 import tripadvisorIcon from './assets/icons/tripadvisor_icon_1.png';
 
-// 都市カードデータ
+// 都市カード
 const cityCards = [
-  { id: 'bombay', title: 'Mumbai', image: mumbaiImg },
+  { id: 'mumbai', title: 'Mumbai', image: mumbaiImg },
   { id: 'hyderabad', title: 'Hyderabad', image: delhiImg },
 ];
 
@@ -48,7 +48,7 @@ const lockedSections = [
   { id: 'article', title: '自作記事' },
 ];
 
-// メニュー項目
+// メニュー
 const menuItems = [
   { id: 'home', label: 'ホーム', icon: homeIcon },
   { id: 'map', label: 'マップ', icon: mapIcon },
@@ -64,14 +64,14 @@ const filterCategories = [
   { id: 'crowd', label: '混雑度', icon: crowdIcon, activeIcon: crowdIconActive, max: 5 },
 ];
 
-// 場所の種類
+// スポット種別
 const placeTypes = [
   { id: 'restaurant', label: '飲食店', icon: restaurantIcon },
   { id: 'hotel', label: 'ホテル', icon: hotelIcon },
   { id: 'spot', label: 'スポット', icon: spotIcon },
 ];
 
-// 都市リスト
+// 都市一覧
 const cities = [
   { id: 'hyderabad', name: 'ハイデラバード' },
   { id: 'mumbai', name: 'ムンバイ' },
@@ -85,22 +85,99 @@ const cityLocations = {
   delhi: { lat: 28.613939, lng: 77.209021 },
 };
 
-// API 基础 URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+// API ベース URL
+// 開発時は同一オリジン（Vite proxy 経由）にして LAN/モバイルでも安定させる
+// 本番では VITE_API_BASE_URL を設定する
+const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || '');
 
-// 根据城市 ID 获取坐标的辅助函数
+// city_id から座標を取得するヘルパー
 const getCityCoordinates = (cityId) => {
-  const cityCoords = {
-    hyderabad: { lat: 17.385044, lng: 78.486671 },
-    mumbai: { lat: 19.076090, lng: 72.877426 },
-    delhi: { lat: 28.613939, lng: 77.209021 },
+  // city_id が不明な場合は Hyderabad をデフォルトにする
+  return cityLocations[cityId] || cityLocations.hyderabad;
+};
+
+function KeywordPicker({ keyword, setKeyword, availableKeywords, selectedKeywords, setSelectedKeywords }) {
+  const suggestions = useMemo(() => {
+    const q = (keyword || '').trim();
+    if (!q) return [];
+    const lower = q.toLowerCase();
+    return (availableKeywords || [])
+      .filter((k) => !selectedKeywords?.includes(k))
+      .filter((k) => k.toLowerCase().includes(lower))
+      .slice(0, 8);
+  }, [keyword, availableKeywords, selectedKeywords]);
+
+  const addKeyword = (kw) => {
+    const v = (kw || '').trim();
+    if (!v) return;
+    setSelectedKeywords((prev) => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return arr.includes(v) ? arr : [...arr, v];
+    });
+    setKeyword('');
   };
-  // 如果城市 ID 不存在，返回海得拉巴的坐标作为默认值
-  return cityCoords[cityId] || cityCoords.hyderabad;
+
+  return (
+    <div className="relative">
+      <input
+        value={keyword}
+        onChange={(e) => setKeyword(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            addKeyword(keyword);
+          }
+        }}
+        className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300 text-sm"
+        placeholder="キーワードを入力（Enterで追加）"
+      />
+
+      {suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-20">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => addKeyword(s)}
+              className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-gray-50"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------
+// 写真 URL ヘルパー
+// ----------------------------
+const normalizePhotoUrl = (url) => {
+  if (!url) return '';
+  let u = url.trim();
+  // Google 画像 URL が http の場合は https に寄せる
+  if (u.startsWith('http://lh3.googleusercontent.com')) {
+    u = u.replace('http://', 'https://');
+  }
+  return u;
+};
+
+const parsePhotoUrls = (photoUrl) => {
+  if (!photoUrl || typeof photoUrl !== 'string') return [];
+  // カンマ区切り URL
+  const urls = photoUrl
+    .split(',')
+    .map((s) => normalizePhotoUrl(s))
+    .filter(Boolean)
+    // ダミー URL を除外
+    .filter((u) => !u.includes('example.com'));
+  // 順序を維持して重複排除
+  return Array.from(new Set(urls));
 };
 
 // フィルターパネルコンポーネント
-function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedType, setSelectedType, onSearch }) {
+function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, onCitySelect, isCitySelectOpen, setIsCitySelectOpen, selectedTypes, setSelectedTypes, keyword, setKeyword, availableKeywords, selectedKeywords, setSelectedKeywords, onSearch }) {
   if (!isOpen) return null;
 
   // フィルター項目のレンダリング
@@ -171,11 +248,89 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
 
         <div className="flex gap-2">
           {placeTypes.map((type) => (
-            <button key={type.id} onClick={() => setSelectedType(type.id)} className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-3 px-4 transition-colors ${selectedType === type.id ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              <img src={type.icon} alt={type.label} className={`h-4 w-4 ${selectedType === type.id ? 'brightness-0 invert' : ''}`} />
+            <button
+              key={type.id}
+              onClick={() => {
+                setSelectedTypes((prev) => {
+                  const arr = Array.isArray(prev) ? prev : [];
+                  return arr.includes(type.id) ? arr.filter((t) => t !== type.id) : [...arr, type.id];
+                });
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-3 px-4 transition-colors ${
+                selectedTypes?.includes(type.id) ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <img src={type.icon} alt={type.label} className={`h-4 w-4 ${selectedTypes?.includes(type.id) ? 'brightness-0 invert' : ''}`} />
               <span className="text-xs font-medium">{type.label}</span>
             </button>
           ))}
+        </div>
+
+        {/* キーワード（追加） */}
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-slate-900">キーワード</p>
+
+          {/* selected chips */}
+          {selectedKeywords?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedKeywords.map((kw) => (
+                <span key={kw} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">
+                  {kw}
+                  <button
+                    type="button"
+                    aria-label="remove keyword"
+                    onClick={() => setSelectedKeywords((prev) => prev.filter((x) => x !== kw))}
+                    className="text-violet-700/70 hover:text-violet-900"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <KeywordPicker
+            keyword={keyword}
+            setKeyword={setKeyword}
+            availableKeywords={availableKeywords}
+            selectedKeywords={selectedKeywords}
+            setSelectedKeywords={setSelectedKeywords}
+          />
+
+          {/* keywords quick pick */}
+          {Array.isArray(availableKeywords) && availableKeywords.length > 0 && (
+            <div className="pt-1">
+              <p className="text-xs font-medium text-slate-500 mb-2">キーワードを選ぶ</p>
+              {/* show at most two lines */}
+              <div className="flex flex-wrap gap-2 max-h-[72px] overflow-hidden">
+                {availableKeywords.slice(0, 40).map((kw) => {
+                  const active = selectedKeywords?.includes(kw);
+                  return (
+                    <button
+                      key={kw}
+                      type="button"
+                      onClick={() => {
+                        setSelectedKeywords((prev) => {
+                          const arr = Array.isArray(prev) ? prev : [];
+                          return arr.includes(kw) ? arr.filter((x) => x !== kw) : [...arr, kw];
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        active
+                          ? 'bg-violet-500 text-white border-violet-500'
+                          : 'bg-white text-slate-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {kw}
+                    </button>
+                  );
+                })}
+              </div>
+              {availableKeywords.length > 40 && (
+                <p className="mt-2 text-[11px] text-slate-500">上位 40 件を対象にしています（表示は2行まで・入力で絞り込みできます）</p>
+              )}
+            </div>
+          )}
         </div>
 
         <button onClick={() => { onSearch && onSearch(); onClose(); }} className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors">
@@ -187,7 +342,7 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
 }
 
 // サイドメニューコンポーネント
-function SideMenu({ isOpen, onClose, onNavigate }) {
+function SideMenu({ isOpen, onClose, onNavigate, isLoggedIn, onLogout }) {
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />}
@@ -197,8 +352,8 @@ function SideMenu({ isOpen, onClose, onNavigate }) {
             <path d="M4 4L16 16M16 4L4 16" />
           </svg>
         </button>
-        <nav className="pt-20 px-6">
-          <ul className="space-y-1">
+        <nav className="pt-20 px-6 pb-6 flex flex-col h-full">
+          <ul className="space-y-1 flex-1">
             {menuItems.map((item, index) => (
               <li key={item.id}>
                 <button onClick={() => onNavigate(item.id)} className="w-full flex items-center gap-4 text-white py-4 px-2 hover:bg-white/10 rounded-lg transition-colors">
@@ -209,6 +364,21 @@ function SideMenu({ isOpen, onClose, onNavigate }) {
               </li>
             ))}
           </ul>
+          {isLoggedIn && (
+            <div className="pt-4 border-t border-white/30">
+              <button 
+                onClick={() => { onLogout(); onClose(); }} 
+                className="w-full flex items-center gap-4 text-white py-4 px-2 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                <span className="text-base font-medium">ログアウト</span>
+              </button>
+            </div>
+          )}
         </nav>
       </div>
     </>
@@ -223,7 +393,7 @@ function App() {
     language: 'ja',
   });
 
-  // 检查Google Maps加载错误
+  // Google Maps 読み込みエラー監視
   useEffect(() => {
     if (loadError) {
       console.error('Google Maps加载错误:', loadError);
@@ -236,8 +406,9 @@ function App() {
   
   // 地図状態
   const [mapLocation, setMapLocation] = useState({ lat: 17.385044, lng: 78.486671 });
+  const mapRef = useRef(null);
   
-  // UI状態
+  // UI 状態
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isCitySelectOpen, setIsCitySelectOpen] = useState(false);
@@ -245,7 +416,7 @@ function App() {
   
   // フィルター状態
   const [restaurantUrl, setRestaurantUrl] = useState('');
-  const [selectedType, setSelectedType] = useState('restaurant'); // 默认显示餐厅
+  const [selectedTypes, setSelectedTypes] = useState([]); // 未選択可・複数選択可
   const [selectedCity, setSelectedCity] = useState(null);
   const [filters, setFilters] = useState({
     spiciness: 0,
@@ -257,15 +428,63 @@ function App() {
   // 検索状態
   const [keyword, setKeyword] = useState('');
   const [shops, setShops] = useState([]);
+  // レストランデータ（キーワード候補生成にも使うため先に宣言）
+  const [restaurants, setRestaurants] = useState([]);
+  const [selectedKeywords, setSelectedKeywords] = useState([]);
+  const [dbKeywords, setDbKeywords] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const [searchSort, setSearchSort] = useState({ by: 'rating', dir: 'desc' });
+  const [lastSearchQuery, setLastSearchQuery] = useState(null);
+  const availableKeywords = useMemo(() => {
+    const set = new Set();
+    for (const r of restaurants || []) {
+      if (Array.isArray(r.keywords)) {
+        for (const k of r.keywords) set.add(k);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [restaurants]);
+
+  const keywordOptions = useMemo(() => {
+    // キーワードの出現店舗数で降順ソート（店舗データ `restaurants` を反映）
+    const freq = new Map();
+    for (const r of restaurants || []) {
+      const kws = Array.isArray(r.keywords) ? r.keywords : [];
+      const uniq = new Set(kws.filter(Boolean));
+      for (const kw of uniq) {
+        freq.set(kw, (freq.get(kw) || 0) + 1);
+      }
+    }
+
+    const byFreq = Array.from(freq.entries())
+      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+      .map(([kw]) => kw);
+
+    if (byFreq.length > 0) return byFreq;
+
+    // 代替：restaurants 未取得の間は DB キーワード（あれば）→導出キーワードを使う
+    const list = Array.isArray(dbKeywords) && dbKeywords.length > 0 ? dbKeywords : availableKeywords;
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+  }, [restaurants, dbKeywords, availableKeywords]);
   
   // ユーザー状態
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [userPreferences, setUserPreferences] = useState({
     spiceTolerance: null,
     cleanliness: null,
     comfort: null,
     crowd: null,
   });
+  
+  // ログインフォーム状態
+  const [loginForm, setLoginForm] = useState({
+    email: '',
+    password: '',
+  });
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // 登録フォーム状態
   const [signupForm, setSignupForm] = useState({
@@ -275,44 +494,265 @@ function App() {
     confirmPassword: '',
   });
   const [passwordError, setPasswordError] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  
+  // お気に入り状態
+  const [favoriteShopIds, setFavoriteShopIds] = useState(new Set());
+  const [favoriteShops, setFavoriteShops] = useState([]);
+  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   
   // レストランデータ状態
-  const [restaurants, setRestaurants] = useState([]);
   const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
   const [restaurantsError, setRestaurantsError] = useState(null);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
-
-   // お店検索　これ追加した！
-   const searchShops = async () => {
+  const selectedRestaurantPhotoUrls = useMemo(
+    () => parsePhotoUrls(selectedRestaurant?.photo_url),
+    [selectedRestaurant?.photo_url]
+  );
+  const photoCarouselRef = useRef(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const carouselPointerDownRef = useRef(false);
+  const carouselPointerIdRef = useRef(null);
+  const carouselStartXRef = useRef(0);
+  const carouselStartScrollLeftRef = useRef(0);
+  // 旧：スクロールバー自動表示用の state/ref（現在はスクロールバー非表示に統一したため削除）
+  const [isWriteReviewOpen, setIsWriteReviewOpen] = useState(false);
+  const [reviewForm, setReviewForm] = useState({
+    name: '',
+    text: '',
+    spicy: '',
+    clean: '',
+    comfort: '',
+    crowd: '',
+  });
+  const [reviewsByShopId, setReviewsByShopId] = useState(() => {
     try {
-      console.log('検索開始:', { keyword, selectedType, selectedCity, filters });
-      
+      const raw = localStorage.getItem('reviewsByShopId');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('reviewsByShopId', JSON.stringify(reviewsByShopId));
+    } catch {
+      // 例外は無視
+    }
+  }, [reviewsByShopId]);
+
+  useEffect(() => {
+    setActivePhotoIndex(0);
+    // 店変更時に先頭へ戻す
+    if (photoCarouselRef.current) {
+      photoCarouselRef.current.scrollLeft = 0;
+    }
+  }, [selectedRestaurant?.id]);
+
+  useEffect(() => {
+    // 写真枚数が変わった場合にインデックスを丸める
+    if (activePhotoIndex > selectedRestaurantPhotoUrls.length - 1) {
+      setActivePhotoIndex(Math.max(0, selectedRestaurantPhotoUrls.length - 1));
+    }
+  }, [activePhotoIndex, selectedRestaurantPhotoUrls.length]);
+
+  const scrollToPhotoIndex = (idx) => {
+    const el = photoCarouselRef.current;
+    if (!el) return;
+    const clamped = Math.max(0, Math.min(idx, selectedRestaurantPhotoUrls.length - 1));
+    const width = el.clientWidth || 0;
+    el.scrollTo({ left: width * clamped, behavior: 'smooth' });
+  };
+
+  const focusShopOnMap = (shop) => {
+    const latRaw = shop?.latitude ?? shop?.position?.lat;
+    const lngRaw = shop?.longitude ?? shop?.position?.lng;
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const target = { lat, lng };
+    setMapLocation(target);
+    try {
+      mapRef.current?.panTo?.(target);
+    } catch {
+      // 例外は無視
+    }
+  };
+
+  const onCarouselPointerDown = (e) => {
+    const el = photoCarouselRef.current;
+    if (!el) return;
+    // タッチはネイティブの横スクロール（慣性）を優先。マウスのみドラッグ実装。
+    if (e.pointerType !== 'mouse') return;
+    // 左クリックのみ
+    if (e.button !== 0) return;
+    carouselPointerDownRef.current = true;
+    carouselPointerIdRef.current = e.pointerId;
+    carouselStartXRef.current = e.clientX;
+    carouselStartScrollLeftRef.current = el.scrollLeft;
+    // ドラッグ中は snap を切り、離した時に吸着させる
+    try {
+      el.style.scrollSnapType = 'none';
+    } catch {
+      // 例外は無視
+    }
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // 例外は無視
+    }
+  };
+
+  const onCarouselPointerMove = (e) => {
+    const el = photoCarouselRef.current;
+    if (!el || !carouselPointerDownRef.current) return;
+    const dx = e.clientX - carouselStartXRef.current;
+    // ドラッグを軽く感じさせるため移動量を少し増幅
+    const DRAG_SPEED = 1.35;
+    el.scrollLeft = carouselStartScrollLeftRef.current - dx * DRAG_SPEED;
+    try {
+      e.preventDefault();
+    } catch {
+      // 例外は無視
+    }
+  };
+
+  const onCarouselPointerUpOrCancel = (e) => {
+    const el = photoCarouselRef.current;
+    if (!el || !carouselPointerDownRef.current) return;
+    if (carouselPointerIdRef.current != null) {
+      try {
+        el.releasePointerCapture(carouselPointerIdRef.current);
+      } catch {
+        // 例外は無視
+      }
+    }
+    carouselPointerDownRef.current = false;
+    carouselPointerIdRef.current = null;
+    // snap を復帰
+    try {
+      el.style.scrollSnapType = '';
+    } catch {
+      // 例外は無視
+    }
+    // 最も近い画像へ吸着
+    if (el.clientWidth) {
+      const idx = Math.round(el.scrollLeft / el.clientWidth);
+      scrollToPhotoIndex(idx);
+    }
+  };
+  // （削除）旧スクロールバー自動表示ロジック
+
+  const openDetailPage = () => {
+    if (!selectedRestaurant) return;
+    setPreviousPage(currentPage);
+    setCurrentPage('detail');
+  };
+
+  const closeDetailPage = () => {
+    setIsWriteReviewOpen(false);
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+    // 詳細を閉じ、下部の詳細カードも閉じる
+    setSelectedRestaurant(null);
+    setCurrentPage('map');
+  };
+
+  const isDetailOpen = currentPage === 'detail' && !!selectedRestaurant;
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  const handleSearchSortClick = (by) => {
+    const active = searchSort.by === by;
+    const next = active
+      ? { by, dir: searchSort.dir === 'asc' ? 'desc' : 'asc' }
+      : { by, dir: by === 'crowd' ? 'asc' : 'desc' };
+    setSearchSort(next);
+    searchShops(next, lastSearchQuery || undefined);
+  };
+
+  const currentReviews = useMemo(() => {
+    const key = selectedRestaurant?.id;
+    if (!key) return [];
+    return Array.isArray(reviewsByShopId[key]) ? reviewsByShopId[key] : [];
+  }, [reviewsByShopId, selectedRestaurant?.id]);
+
+  const submitReview = () => {
+    if (!selectedRestaurant) return;
+    const name = (reviewForm.name || '').trim() || 'ゲスト';
+    const text = (reviewForm.text || '').trim();
+    const spicy = Number(reviewForm.spicy);
+    const clean = Number(reviewForm.clean);
+    const comfort = Number(reviewForm.comfort);
+    const crowd = Number(reviewForm.crowd);
+    if (!text) return;
+    if (![spicy, clean, comfort, crowd].every((n) => Number.isFinite(n) && n >= 1 && n <= 5)) return;
+
+    const entry = {
+      id: `${Date.now()}`,
+      name,
+      text,
+      createdAt: new Date().toISOString(),
+      ratings: { spicy, clean, comfort, crowd },
+    };
+
+    setReviewsByShopId((prev) => {
+      const shopId = selectedRestaurant.id;
+      const nextList = [entry, ...(Array.isArray(prev[shopId]) ? prev[shopId] : [])];
+      return { ...prev, [shopId]: nextList };
+    });
+
+    setIsWriteReviewOpen(false);
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+  };
+
+  // お店検索（フィルターパネルの「検索」から呼ぶ）
+   const searchShops = async (overrideSort, overrideQuery) => {
+    try {
+      setIsSearching(true);
+      setSearchError(null);
+      // console.debug('searchShops start', { keyword, selectedTypes, selectedCity, filters });
+      const sort = overrideSort || searchSort;
+
+      const q =
+        overrideQuery ||
+        {
+          keyword: keyword || '',
+          keywords: Array.isArray(selectedKeywords) ? selectedKeywords.join(',') : '',
+          shop_type: Array.isArray(selectedTypes) ? selectedTypes.join(',') : '',
+          city: selectedCity?.id || '',
+          min_spicy: filters.spiciness || 0,
+          min_clean: filters.cleanliness || 0,
+          min_comfort: filters.comfort || 0,
+          min_congestion: filters.crowd || 0,
+        };
+
+      if (!overrideQuery) setLastSearchQuery(q);
+
       const params = new URLSearchParams({
-        keyword: keyword || '',
-        shop_type: selectedType || '',
-        city: selectedCity?.id || '',
-        min_spicy: filters.spiciness || 0,
-        min_clean: filters.cleanliness || 0,
-        min_comfort: filters.comfort || 0,
-        min_congestion: filters.crowd || 0,
+        ...q,
+        sort_by: sort.by,
+        sort_dir: sort.dir,
       });
 
-      console.log('検索URL:', `http://localhost:5000/search_shops_json?${params}`);
-      
-      const res = await fetch(`http://localhost:5001/search_shops_json?${params}`);
+      // console.debug('searchShops url', `/search_shops_json?${params}`);
+      // 開発時は同一オリジン（Vite proxy）で LAN/モバイルでも動作させる
+      const res = await fetch(`/search_shops_json?${params}`);
       
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
       
       const data = await res.json();
-      console.log('検索結果:', data);
-      console.log('検索結果数:', data?.length || 0);
       
       setShops(data || []);
+      setIsSearchOpen(true);
     } catch (e) {
       console.error('検索失敗', e);
       setShops([]);
+      setSearchError('検索に失敗しました');
+    } finally {
+      setIsSearching(false);
     }
   };
   // データベースからレストランデータを取得
@@ -326,32 +766,39 @@ function App() {
           throw new Error('データの取得に失敗しました');
         }
         const data = await response.json();
-        console.log('获取到的数据:', data);
-        console.log('数据类型统计:', {
-          restaurant: data.filter(r => r.shop_type === 'restaurant').length,
-          hotel: data.filter(r => r.shop_type === 'hotel').length,
-          spot: data.filter(r => r.shop_type === 'spot').length,
-          total: data.length
-        });
-        // 检查原始数据中的keywords
-        data.forEach(r => {
-          if (r.shop_type === 'hotel' || r.shop_type === 'spot') {
-            console.log('原始数据检查:', r.name, 'keywords:', r.keywords, '类型:', typeof r.keywords, '是否为数组:', Array.isArray(r.keywords), '长度:', r.keywords?.length);
-          }
-        });
+
+        // Neon/pg は NUMERIC を文字列で返すことがあるため数値へ正規化する
+        // Google Maps の marker や表示整形が安定する
+        const toNumberOrNull = (v) => {
+          if (v === null || v === undefined || v === '') return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+
+        // デバッグログは本番衛生のため削除
         const restaurantsWithPosition = data.map(restaurant => {
-          // 确保keywords字段正确保留 - 直接使用原始值，如果不存在或不是数组则使用空数组
+          // keywords は配列として必ず保持（なければ空配列）
           const keywords = (restaurant.keywords && Array.isArray(restaurant.keywords)) ? restaurant.keywords : [];
+
+          const latitude = toNumberOrNull(restaurant.latitude);
+          const longitude = toNumberOrNull(restaurant.longitude);
+          const avgRating = toNumberOrNull(restaurant.avg_rating);
+
           const result = {
             ...restaurant,
+            // 数値系フィールドを正規化
+            spicy_level: toNumberOrNull(restaurant.spicy_level),
+            clean_level: toNumberOrNull(restaurant.clean_level),
+            comfortable_level: toNumberOrNull(restaurant.comfortable_level),
+            congestion_level: toNumberOrNull(restaurant.congestion_level),
+            avg_rating: avgRating,
+            latitude,
+            longitude,
             position: restaurant.latitude && restaurant.longitude 
-              ? { lat: restaurant.latitude, lng: restaurant.longitude }
+              ? { lat: latitude ?? getCityCoordinates(restaurant.city_id).lat, lng: longitude ?? getCityCoordinates(restaurant.city_id).lng }
               : getCityCoordinates(restaurant.city_id),
-            keywords: keywords, // 确保keywords字段存在且为数组
+            keywords: keywords, // keywords は配列として扱う
           };
-          if (restaurant.shop_type === 'hotel' || restaurant.shop_type === 'spot') {
-            console.log('处理后的数据:', restaurant.name, 'shop_type:', restaurant.shop_type, '原始keywords:', restaurant.keywords, '处理后keywords:', result.keywords, 'keywords类型:', typeof result.keywords, '是否为数组:', Array.isArray(result.keywords), '长度:', result.keywords.length);
-          }
           return result;
         });
         setRestaurants(restaurantsWithPosition);
@@ -364,8 +811,8 @@ function App() {
       }
     };
 
-    // マップページまたはホームページでデータを取得
-    if (currentPage === 'map' || currentPage === 'home') {
+    // マップページ/ホーム/詳細（地図上のオーバーレイ）でデータを取得
+    if (currentPage === 'map' || currentPage === 'home' || currentPage === 'detail') {
       fetchRestaurants();
     }
   }, [currentPage]);
@@ -380,18 +827,81 @@ function App() {
   const resetFilters = () => {
     setFilters({ spiciness: 0, cleanliness: 0, comfort: 0, crowd: 0 });
     setSelectedCity(null);
-    setSelectedType('restaurant'); // 重置为餐厅
+    setSelectedTypes([]); // 未選択へリセット
+    setKeyword('');
+    setSelectedKeywords([]);
     setIsCitySelectOpen(false);
   };
+
+  // マップ関連状態リセット（マップ → ホーム遷移時）
+  const resetMapPageState = () => {
+    // UI オーバーレイ/パネルを閉じる
+    setIsMenuOpen(false);
+    setIsFilterOpen(false);
+    setIsUrlSubmitOpen(false);
+    setIsCitySelectOpen(false);
+    setIsWriteReviewOpen(false);
+
+    // 選択/検索結果をクリア
+    setSelectedRestaurant(null);
+    setIsSearchOpen(false);
+    setShops([]);
+    setSearchError(null);
+    setIsSearching(false);
+    setLastSearchQuery(null);
+    setSearchSort({ by: 'rating', dir: 'desc' });
+
+    // フィルター入力をリセット
+    resetFilters();
+
+    // 地図中心をデフォルトへ
+    setMapLocation({ lat: 17.385044, lng: 78.486671 });
+  };
+
+  // マップページからホームへ戻る時に、マップページの状態をリセット
+  const lastPageRef = useRef(currentPage);
+  useEffect(() => {
+    const prev = lastPageRef.current;
+    if ((prev === 'map' || prev === 'detail') && currentPage === 'home') {
+      resetMapPageState();
+    }
+    lastPageRef.current = currentPage;
+  }, [currentPage]);
+
+  useEffect(() => {
+    // DB のキーワード一覧を取得（Node API 経由）
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/keywords`);
+        if (!res.ok) return;
+        const rows = await res.json();
+        const words = (Array.isArray(rows) ? rows : [])
+          .map((r) => r?.word)
+          .filter((w) => typeof w === 'string' && w.trim())
+          .map((w) => w.trim());
+        setDbKeywords(words);
+    } catch {
+      // 例外は無視
+      }
+    };
+    load();
+  }, []);
   
-  // フィルターパネル閉じる
+  // フィルターパネル閉じる：状態をクリア
   const handleCloseFilter = () => { setIsFilterOpen(false); resetFilters(); };
   
   // メニューナビゲーション
   const handleMenuNavigate = (pageId) => {
     if (pageId === 'home' || pageId === 'map') {
       setCurrentPage(pageId);
-    } else if ((pageId === 'profile' || pageId === 'favorites') && !isLoggedIn) {
+    } else if (pageId === 'favorites') {
+      if (!isLoggedIn) {
+        setPreviousPage(currentPage);
+        setCurrentPage('login');
+      } else {
+        setCurrentPage('favorites');
+      }
+    } else if (pageId === 'profile' && !isLoggedIn) {
       setPreviousPage(currentPage);
       setCurrentPage('login');
     }
@@ -403,6 +913,187 @@ function App() {
     if (Math.abs(mapLocation.lat - 17.385044) < 0.01) return 'Hyderabad';
     if (Math.abs(mapLocation.lat - 19.076090) < 0.01) return 'Mumbai';
     return 'Hyderabad';
+  };
+  
+  // ログイン状態チェック
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+      try {
+        const res = await fetch('/auth/me_json', {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.logged_in) {
+            setIsLoggedIn(true);
+            setCurrentUser(data.user);
+          }
+        }
+      } catch (error) {
+        console.error('ログイン状態確認エラー:', error);
+      }
+    };
+    checkLoginStatus();
+  }, []);
+
+  // ページ切り替え時にログイン/登録フォームをクリア
+  useEffect(() => {
+    if (currentPage !== 'login' && currentPage !== 'signup') {
+      // ログインページから離れた時
+      setLoginForm({ email: '', password: '' });
+      setLoginError('');
+      // 登録ページから離れた時
+      setSignupForm({ username: '', email: '', password: '', confirmPassword: '' });
+      setUserPreferences({ spiceTolerance: null, cleanliness: null, comfort: null, crowd: null });
+      setPasswordError('');
+      setSignupError('');
+    }
+  }, [currentPage]);
+
+  // ログイン送信
+  const handleLoginSubmit = async () => {
+    if (!loginForm.email || !loginForm.password) {
+      setLoginError('メールアドレスとパスワードを入力してください');
+      return;
+    }
+    
+    setIsLoggingIn(true);
+    setLoginError('');
+    
+    try {
+      const formData = new FormData();
+      formData.append('email', loginForm.email);
+      formData.append('password', loginForm.password);
+      
+      const res = await fetch('/auth/login_json', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      
+      const data = await res.json();
+      
+      if (data.ok) {
+        setIsLoggedIn(true);
+        setCurrentUser(data.user);
+        setLoginForm({ email: '', password: '' });
+        setCurrentPage(previousPage);
+      } else {
+        setLoginError(data.error || 'ログインに失敗しました');
+      }
+    } catch (error) {
+      console.error('ログインエラー:', error);
+      setLoginError('ログインに失敗しました。もう一度お試しください。');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // ログアウト
+  const handleLogout = async () => {
+    try {
+      await fetch('/auth/logout_json', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      setFavoriteShopIds(new Set());
+      setFavoriteShops([]);
+      setCurrentPage('home');
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+    }
+  };
+
+  // お気に入り状態を取得
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setFavoriteShopIds(new Set());
+      setFavoriteShops([]);
+      return;
+    }
+
+    const loadFavorites = async () => {
+      setIsLoadingFavorites(true);
+      try {
+        const res = await fetch('/auth/favorites_json', {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.favorites) {
+            const ids = new Set(data.favorites.map((s) => s.id));
+            setFavoriteShopIds(ids);
+            setFavoriteShops(data.favorites);
+          }
+        }
+      } catch (error) {
+        console.error('お気に入り取得エラー:', error);
+      } finally {
+        setIsLoadingFavorites(false);
+      }
+    };
+
+    loadFavorites();
+  }, [isLoggedIn]);
+
+  // お気に入りに追加/削除
+  const toggleFavorite = async (shopId) => {
+    if (!isLoggedIn) {
+      setPreviousPage(currentPage);
+      setCurrentPage('login');
+      return;
+    }
+
+    const isFavorite = favoriteShopIds.has(shopId);
+    const method = isFavorite ? 'DELETE' : 'POST';
+    
+    try {
+      const res = await fetch('/auth/favorites_json', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ shop_id: shopId }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        const newIds = new Set(favoriteShopIds);
+        if (isFavorite) {
+          newIds.delete(shopId);
+          setFavoriteShops((prev) => prev.filter((s) => s.id !== shopId));
+        } else {
+          newIds.add(shopId);
+          // 店舗情報を取得して追加（restaurants または selectedRestaurant から）
+          const shop = restaurants.find((r) => r.id === shopId) || 
+                       (selectedRestaurant && selectedRestaurant.id === shopId ? selectedRestaurant : null);
+          if (shop) {
+            setFavoriteShops((prev) => {
+              // 既に存在する場合は追加しない
+              if (prev.find((s) => s.id === shopId)) return prev;
+              return [...prev, shop];
+            });
+          } else {
+            // 店舗情報が見つからない場合は、お気に入り一覧を再取得
+            const favRes = await fetch('/auth/favorites_json', {
+              credentials: 'include',
+            });
+            if (favRes.ok) {
+              const favData = await favRes.json();
+              if (favData.ok && favData.favorites) {
+                setFavoriteShops(favData.favorites);
+              }
+            }
+          }
+        }
+        setFavoriteShopIds(newIds);
+      } else {
+        console.error('お気に入り操作エラー:', data.error);
+      }
+    } catch (error) {
+      console.error('お気に入り操作エラー:', error);
+    }
   };
   
   // パスワード変更
@@ -420,7 +1111,7 @@ function App() {
   };
   
   // 登録送信
-  const handleSignupSubmit = () => {
+  const handleSignupSubmit = async () => {
     if (signupForm.password !== signupForm.confirmPassword) {
       setPasswordError('パスワードが一致しません');
       return;
@@ -429,17 +1120,99 @@ function App() {
       setPasswordError('パスワードを入力してください');
       return;
     }
+    if (!signupForm.username || signupForm.username.length < 3) {
+      setSignupError('ユーザー名は3文字以上で入力してください');
+      return;
+    }
+    if (!signupForm.email || !signupForm.email.includes('@')) {
+      setSignupError('有効なメールアドレスを入力してください');
+      return;
+    }
+    if (!userPreferences.spiceTolerance || !userPreferences.cleanliness || !userPreferences.comfort || !userPreferences.crowd) {
+      setSignupError('すべての評価項目を選択してください');
+      return;
+    }
+    
     setPasswordError('');
-    setCurrentPage('home');
+    setSignupError('');
+    setIsSigningUp(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('name', signupForm.username);
+      formData.append('email', signupForm.email);
+      formData.append('password', signupForm.password);
+      formData.append('spicy_level', String(userPreferences.spiceTolerance));
+      formData.append('clean_level', String(userPreferences.cleanliness));
+      formData.append('comfortable_level', String(userPreferences.comfort));
+      formData.append('congestion_level', String(userPreferences.crowd));
+      
+      const res = await fetch('/auth/register_json', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        setSignupError(`サーバーエラー: レスポンスの解析に失敗しました (${res.status})`);
+        return;
+      }
+      
+      if (!res.ok || !data.ok) {
+        setSignupError(data.error || `登録に失敗しました (HTTP ${res.status})`);
+        return;
+      }
+      
+      // 登録成功後、自動ログイン
+      const loginFormData = new FormData();
+      loginFormData.append('email', signupForm.email);
+      loginFormData.append('password', signupForm.password);
+      
+      try {
+        const loginRes = await fetch('/auth/login_json', {
+          method: 'POST',
+          credentials: 'include',
+          body: loginFormData,
+        });
+        
+        const loginData = await loginRes.json();
+        if (loginData.ok) {
+          setIsLoggedIn(true);
+          setCurrentUser(loginData.user);
+        } else {
+          console.warn('自動ログインに失敗しましたが、登録は成功しました');
+        }
+      } catch (loginError) {
+        console.error('自動ログインエラー:', loginError);
+        // 登録は成功したので、エラーを表示しない
+      }
+      
+      // フォームをリセット
+      setSignupForm({ username: '', email: '', password: '', confirmPassword: '' });
+      setUserPreferences({ spiceTolerance: null, cleanliness: null, comfort: null, crowd: null });
+      setCurrentPage('home');
+    } catch (error) {
+      console.error('登録エラー:', error);
+      setSignupError('登録に失敗しました。もう一度お試しください。');
+    } finally {
+      setIsSigningUp(false);
+    }
   };
 
   // ログインページ
   if (currentPage === 'login') {
     return (
-      <main className="bg-white font-inter text-slate-900">
-        <div className="mx-auto max-w-md">
+      <main className="bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md w-full">
           <div className="flex items-center px-6 py-4 border-b border-gray-200">
-            <button onClick={() => setCurrentPage(previousPage)} className="p-2" aria-label="戻る">
+            <button onClick={() => {
+              setLoginForm({ email: '', password: '' });
+              setLoginError('');
+              setCurrentPage(previousPage);
+            }} className="p-2" aria-label="戻る">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
                 <path d="M19 12H5M12 19l-7-7 7-7"/>
               </svg>
@@ -449,16 +1222,39 @@ function App() {
           </div>
           <div className="h-[29vh] bg-cover bg-center" style={{ backgroundImage: `url(${signupBg})` }} />
           <div className="px-8 pt-8 space-y-8">
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                <p className="text-sm text-red-600">{loginError}</p>
+              </div>
+            )}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">ユーザー名またはメールアドレス</label>
-              <input type="text" className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <label className="text-sm font-medium text-slate-700">メールアドレス</label>
+              <input 
+                type="email" 
+                value={loginForm.email}
+                onChange={(e) => setLoginForm(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+                placeholder="example@email.com"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">パスワード</label>
-              <input type="password" className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" />
+              <input 
+                type="password" 
+                value={loginForm.password}
+                onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+                placeholder="パスワードを入力"
+              />
             </div>
             <div className="!mt-16">
-              <button className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors">登録</button>
+              <button 
+                onClick={handleLoginSubmit}
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoggingIn ? 'ログイン中...' : 'ログイン'}
+              </button>
             </div>
             <div className="flex flex-col items-center space-y-3 pt-4 pb-12">
               <button onClick={() => setCurrentPage('signup')} className="text-sm text-violet-400 hover:text-violet-600">新規登録</button>
@@ -495,10 +1291,16 @@ function App() {
     );
 
     return (
-      <main className="bg-white font-inter text-slate-900">
-        <div className="mx-auto max-w-md min-h-screen">
+      <main className="bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md min-h-screen w-full">
           <div className="flex items-center px-6 py-4 border-b border-gray-200">
-            <button onClick={() => setCurrentPage('login')} className="p-2" aria-label="戻る">
+            <button onClick={() => {
+              setSignupForm({ username: '', email: '', password: '', confirmPassword: '' });
+              setUserPreferences({ spiceTolerance: null, cleanliness: null, comfort: null, crowd: null });
+              setPasswordError('');
+              setSignupError('');
+              setCurrentPage('login');
+            }} className="p-2" aria-label="戻る">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
                 <path d="M19 12H5M12 19l-7-7 7-7"/>
               </svg>
@@ -615,12 +1417,18 @@ function App() {
               }}
             />
 
+            {signupError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                <p className="text-sm text-red-600">{signupError}</p>
+              </div>
+            )}
             <div className="pt-6 pb-12">
               <button 
                 onClick={handleSignupSubmit}
-                className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors"
+                disabled={isSigningUp}
+                className="w-full py-3 bg-violet-500 text-white font-semibold rounded-full shadow-lg hover:bg-violet-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                ユーザー登録
+                {isSigningUp ? '登録中...' : 'ユーザー登録'}
               </button>
             </div>
           </div>
@@ -629,29 +1437,209 @@ function App() {
     );
   }
 
-  // マップページ
-  if (currentPage === 'map') {
+  // お気に入りページ
+  if (currentPage === 'favorites') {
     return (
-      <main className="min-h-screen bg-white font-inter text-slate-900">
-        <div className="mx-auto max-w-md min-h-screen flex flex-col relative">
-          <div className="absolute top-32 inset-x-0 flex justify-center px-6 z-20">
+      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md w-full">
+          <div className="flex items-center px-6 py-4 border-b border-gray-200">
+            <button onClick={() => setCurrentPage(previousPage)} className="p-2" aria-label="戻る">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            <h1 className="flex-1 text-center text-lg font-semibold text-slate-900">お気に入り</h1>
+            <div className="w-10"></div>
+          </div>
+
+          <div className="px-6 py-4">
+            {isLoadingFavorites ? (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-slate-500">読み込み中...</p>
+              </div>
+            ) : favoriteShops.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <svg className="w-16 h-16 text-violet-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+                <p className="text-slate-500 text-sm">お気に入りがありません</p>
+                <p className="text-slate-400 text-xs mt-2">気になる店舗を追加してみましょう</p>
+              </div>
+            ) : (
+              <div className="space-y-4 pb-6">
+                {favoriteShops.map((shop) => {
+                  const photos = parsePhotoUrls(shop.photo_url).slice(0, 3);
+                  return (
+                    <button
+                      key={shop.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRestaurant(shop);
+                        setMapLocation({ lat: shop.latitude, lng: shop.longitude });
+                        setCurrentPage('map');
+                      }}
+                      className="w-full text-left bg-white rounded-2xl shadow-[0_10px_25px_rgba(15,23,42,0.12)] border border-gray-100 overflow-hidden hover:shadow-[0_12px_30px_rgba(15,23,42,0.15)] transition-shadow"
+                    >
+                      <div className="p-4 flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-base font-bold text-slate-900 truncate">{shop.name}</p>
+                            <div className="flex items-center gap-1">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                              <span className="text-sm font-semibold text-slate-700">{Number(shop.avg_rating || 0).toFixed(1)}</span>
+                            </div>
+                          </div>
+                          {Array.isArray(shop.keywords) && shop.keywords.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500">
+                              {shop.keywords.slice(0, 4).map((k) => (
+                                <span key={k}>{k}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="お気に入りから削除"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleFavorite(shop.id);
+                          }}
+                          className="shrink-0 rounded-full p-2 text-violet-500 bg-violet-50 hover:bg-violet-100 transition-colors"
+                        >
+                          <svg 
+                            width="18" 
+                            height="18" 
+                            viewBox="0 0 24 24" 
+                            fill="currentColor" 
+                            stroke="currentColor" 
+                            strokeWidth="2.2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="px-4 pb-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          {photos.length > 0 ? (
+                            photos.map((u, idx) => (
+                              <div key={`${u}-${idx}`} className="h-20 rounded-xl overflow-hidden bg-gray-100">
+                                <img src={u} alt={`${shop.name}-${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                              </div>
+                            ))
+                          ) : (
+                            <div className="col-span-3 h-20 rounded-xl bg-gray-100 flex items-center justify-center text-xs text-slate-400">
+                              no photo
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="px-4 pb-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">辛さレベル</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.spicy_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={spiceIconDetail} alt="spicy" className={`w-5 h-5 object-contain ${lv <= (shop.spicy_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">清潔度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.clean_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={cleanlinessIconDetail} alt="cleanliness" className={`w-5 h-5 object-contain ${lv <= (shop.clean_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">快適度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.comfortable_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={comfortIconDetail} alt="comfort" className={`w-5 h-5 object-contain ${lv <= (shop.comfortable_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">混雑度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.congestion_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={crowdIconDetail} alt="crowd" className={`w-5 h-5 object-contain ${lv <= (shop.congestion_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // マップページ（検索結果オーバーレイもここで表示）
+  if (currentPage === 'map' || currentPage === 'detail') {
+    return (
+      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md min-h-screen flex flex-col relative w-full">
+          {!isDetailOpen && !isSearchOpen && (
+            <div className="absolute top-32 inset-x-0 flex justify-center px-6 z-20">
             <div onClick={() => setIsFilterOpen(true)} className="flex w-full max-w-[280px] items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.15)] cursor-pointer">
               <input type="text" placeholder="エリア・スポットを検索" className="flex-1 border-none bg-transparent text-sm text-slate-500 placeholder:text-slate-400 focus:outline-none pointer-events-none" readOnly />
               <img src={searchIcon} alt="Search" className="h-5 w-5 opacity-60" />
             </div>
-          </div>
+            </div>
+          )}
 
-          <button onClick={() => { setPreviousPage('map'); setCurrentPage('login'); }} className="absolute top-8 left-6 z-20 rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30">
-            ログイン
-          </button>
+          {!isDetailOpen && !isSearchOpen && (
+            <>
+              {isLoggedIn && currentUser ? (
+                <button 
+                  onClick={() => setIsMenuOpen(true)} 
+                  className="absolute top-8 left-6 z-20 rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30"
+                >
+                  {currentUser.name || currentUser.email}
+                </button>
+              ) : (
+                <button 
+                  onClick={() => { setPreviousPage('map'); setCurrentPage('login'); }} 
+                  className="absolute top-8 left-6 z-20 rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30"
+                >
+                  ログイン
+                </button>
+              )}
+            </>
+          )}
 
-          <button onClick={() => setIsMenuOpen(true)} className="absolute top-8 right-6 z-20 rounded-md bg-violet-500 p-4 text-white shadow-lg hover:bg-violet-600 transition-colors" aria-label="メニュー">
+          {!isDetailOpen && !isSearchOpen && (
+            <button onClick={() => setIsMenuOpen(true)} className="absolute top-8 right-6 z-20 rounded-md bg-violet-500 p-4 text-white shadow-lg hover:bg-violet-600 transition-colors" aria-label="メニュー">
             <div className="space-y-1.5">
               <span className="block h-[2.5px] w-4 rounded-full bg-white" />
               <span className="block h-[2.5px] w-6 rounded-full bg-white" />
               <span className="block h-[2.5px] w-4 rounded-full bg-white" />
             </div>
-          </button>
+            </button>
+          )}
 
           <div className="absolute inset-0" style={{ zIndex: 1 }}>
             {isLoaded ? (
@@ -659,6 +1647,12 @@ function App() {
                 mapContainerStyle={{ width: '100%', height: '100%' }}
                 center={mapLocation}
                 zoom={12}
+                onLoad={(map) => {
+                  mapRef.current = map;
+                }}
+                onUnmount={() => {
+                  mapRef.current = null;
+                }}
                 options={{
                   disableDefaultUI: true,
                   zoomControl: false,
@@ -678,23 +1672,25 @@ function App() {
                 }}
               >
                 {(() => {
-                  // 地图显示：不受筛选面板的selectedType影响，显示所有类型
-                  // 只根据selectedCity过滤（如果选择了城市）
+                  // マップ表示：フィルタ条件で絞り込み
                   const filtered = restaurants.filter((restaurant) => {
-                    // 根据 selectedCity 过滤数据（如果选择了城市）
                     if (selectedCity && restaurant.city_id !== selectedCity.id) {
                       return false;
                     }
+                    if (Array.isArray(selectedTypes) && selectedTypes.length > 0 && !selectedTypes.includes(restaurant.shop_type)) {
+                      return false;
+                    }
+                    const spicy = restaurant.spicy_level ?? 0;
+                    const clean = restaurant.clean_level ?? 0;
+                    const comfort = restaurant.comfortable_level ?? 0;
+                    const crowd = restaurant.congestion_level ?? 0;
+
+                    if ((filters.spiciness || 0) > 0 && spicy < filters.spiciness) return false;
+                    if ((filters.cleanliness || 0) > 0 && clean < filters.cleanliness) return false;
+                    if ((filters.comfort || 0) > 0 && comfort < filters.comfort) return false;
+                    // 混雑度：数値が小さいほど空いている想定なので、上限でフィルタ
+                    if ((filters.crowd || 0) > 0 && crowd > filters.crowd) return false;
                     return true;
-                  });
-                  console.log('地图显示数据:', {
-                    total: restaurants.length,
-                    filtered: filtered.length,
-                    selectedCity: selectedCity?.id || '全部',
-                    types: filtered.reduce((acc, r) => {
-                      acc[r.shop_type] = (acc[r.shop_type] || 0) + 1;
-                      return acc;
-                    }, {})
                   });
                   return filtered;
                 })()
@@ -702,8 +1698,8 @@ function App() {
                   const createCustomIcon = () => {
                     if (typeof window !== 'undefined' && window.google && window.google.maps) {
                       const rating = restaurant.avg_rating?.toFixed(1) || '0.0';
-                      // 根据 shop_type 选择不同的颜色
-                      let fillColor = '#7c3aed'; // 默认紫色（餐厅）
+                      // shop_type に応じて色を変える
+                      let fillColor = '#7c3aed'; // デフォルト（飲食店）
                       
                       if (restaurant.shop_type === 'hotel') {
                         fillColor = '#059669'; // 绿色（酒店）
@@ -713,7 +1709,7 @@ function App() {
                         fillColor = '#7c3aed'; // 紫色（餐厅）
                       }
 
-                      // 使用SVG图标（带评分和类型颜色）
+                      // SVG ピン（評価と種別色）
                       const svgIcon = `
                         <svg width="40" height="50" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
                           <path d="M20 0C8.954 0 0 8.954 0 20c0 15 20 30 20 30s20-15 20-30C40 8.954 31.046 0 20 0z" fill="${fillColor}"/>
@@ -748,12 +1744,35 @@ function App() {
             )}
           </div>
 
-          <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
-          <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType} />
+          {!isDetailOpen && !isSearchOpen && (
+            <>
+              <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} />
+          <FilterPanel
+            isOpen={isFilterOpen}
+            onClose={handleCloseFilter}
+            filters={filters}
+            onFilterChange={handleFilterChange}
+            selectedCity={selectedCity}
+            onCitySelect={handleCitySelect}
+            isCitySelectOpen={isCitySelectOpen}
+            setIsCitySelectOpen={setIsCitySelectOpen}
+            selectedTypes={selectedTypes}
+            setSelectedTypes={setSelectedTypes}
+            keyword={keyword}
+            setKeyword={setKeyword}
+            availableKeywords={keywordOptions}
+            selectedKeywords={selectedKeywords}
+            setSelectedKeywords={setSelectedKeywords}
+            onSearch={searchShops}
+          />
+            </>
+          )}
           
           {/* 餐厅详情卡片 */}
-          {selectedRestaurant && (
-            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out max-w-md mx-auto" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          {!isDetailOpen && !isSearchOpen && selectedRestaurant && (
+            <div
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out max-w-md mx-auto max-h-[70vh] overflow-y-auto hide-scrollbar"
+            >
               {/* 关闭按钮 */}
               <button 
                 onClick={() => setSelectedRestaurant(null)}
@@ -767,52 +1786,43 @@ function App() {
 
               {/* 餐厅图片 - 来自数据库的 photo_url */}
               <div className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-100 to-purple-200">
-                {(() => {
-                  // 处理多张图片（逗号分隔）或单张图片
-                  const photoUrl = selectedRestaurant.photo_url;
-                  console.log('图片URL检查:', {
-                    photoUrl: photoUrl,
-                    hasPhotoUrl: !!photoUrl,
-                    includesExample: photoUrl?.includes('example.com'),
-                    shopType: selectedRestaurant.shop_type,
-                    name: selectedRestaurant.name
-                  });
-                  
-                  if (!photoUrl || photoUrl.includes('example.com')) {
-                    return null;
-                  }
-                  // 如果是多张图片，取第一张
-                  let imageUrl = photoUrl.includes(',') ? photoUrl.split(',')[0].trim() : photoUrl;
-                  
-                  // 如果是HTTP的Google图片URL，尝试改为HTTPS
-                  if (imageUrl.startsWith('http://lh3.googleusercontent.com')) {
-                    imageUrl = imageUrl.replace('http://', 'https://');
-                  }
-                  
-                  console.log('使用的图片URL:', imageUrl);
-                  
-                  return (
-                    <img 
-                      src={imageUrl} 
-                      alt={selectedRestaurant.name}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                      onError={(e) => {
-                        // 如果图片加载失败，隐藏img标签，显示占位符
-                        console.error('图片加载失败:', imageUrl, '错误:', e);
-                        e.target.style.display = 'none';
-                        const placeholder = e.target.nextElementSibling;
-                        if (placeholder) placeholder.style.display = 'flex';
+                {selectedRestaurantPhotoUrls.length > 0 && (
+                  <>
+                    <div
+                      ref={photoCarouselRef}
+                      className="absolute inset-0 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar cursor-grab active:cursor-grabbing select-none"
+                      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+                      onScroll={(e) => {
+                        const el = e.currentTarget;
+                        if (!el.clientWidth) return;
+                        const idx = Math.round(el.scrollLeft / el.clientWidth);
+                        if (idx !== activePhotoIndex) setActivePhotoIndex(idx);
                       }}
-                      onLoad={() => {
-                        console.log('图片加载成功:', imageUrl);
-                      }}
-                    />
-                  );
-                })()}
+                      onPointerDown={onCarouselPointerDown}
+                      onPointerMove={onCarouselPointerMove}
+                      onPointerUp={onCarouselPointerUpOrCancel}
+                      onPointerCancel={onCarouselPointerUpOrCancel}
+                    >
+                      {selectedRestaurantPhotoUrls.map((url, idx) => (
+                        <div key={`${url}-${idx}`} className="w-full h-full flex-shrink-0 snap-center">
+                          <img
+                            src={url}
+                            alt={`${selectedRestaurant.name} ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            draggable={false}
+                            onDragStart={(ev) => ev.preventDefault()}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 左右ボタンは表示しない（ドラッグ/スワイプで切替） */}
+                  </>
+                )}
                 {/* 占位符 - 当没有图片或图片加载失败时显示 */}
-                <div className={`absolute inset-0 flex items-center justify-center ${selectedRestaurant.photo_url && !selectedRestaurant.photo_url.includes('example.com') ? 'hidden' : 'flex'}`}>
+                <div className={`absolute inset-0 flex items-center justify-center ${selectedRestaurantPhotoUrls.length > 0 ? 'hidden' : 'flex'}`}>
                   <div className="text-center">
                     <svg className="w-16 h-16 mx-auto text-violet-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -820,8 +1830,8 @@ function App() {
                     <p className="text-violet-600 text-sm font-medium">{selectedRestaurant.name}</p>
                   </div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                <div className="absolute bottom-4 left-4 right-4">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
+                <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-white text-xl font-bold">{selectedRestaurant.name}</h3>
                     <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full">
@@ -842,13 +1852,22 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex justify-center gap-1.5 py-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
-              </div>
+              {/* 轮播指示点（多图时显示） */}
+              {selectedRestaurantPhotoUrls.length > 1 && (
+                <div className="flex justify-center gap-1.5 py-5">
+                  {selectedRestaurantPhotoUrls.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      aria-label={`写真 ${idx + 1}`}
+                      onClick={() => scrollToPhotoIndex(idx)}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors ${idx === activePhotoIndex ? 'bg-violet-500' : 'bg-gray-300'}`}
+                    />
+                  ))}
+                </div>
+              )}
 
-              <div className="px-6 pb-4">
+              <div className="px-6 pb-4 mt-2">
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: '辛さレベル', value: selectedRestaurant.spicy_level, icon: spiceIconDetail, alt: 'spicy' },
@@ -878,18 +1897,7 @@ function App() {
               </div>
 
               {/* 关键词标签 */}
-              {(() => {
-                const hasKeywords = selectedRestaurant.keywords && Array.isArray(selectedRestaurant.keywords) && selectedRestaurant.keywords.length > 0;
-                console.log('关键词检查:', {
-                  hasKeywords: !!selectedRestaurant.keywords,
-                  isArray: Array.isArray(selectedRestaurant.keywords),
-                  length: selectedRestaurant.keywords?.length,
-                  keywords: selectedRestaurant.keywords,
-                  shopType: selectedRestaurant.shop_type,
-                  willShow: hasKeywords
-                });
-                return hasKeywords;
-              })() && (
+              {(selectedRestaurant.keywords && Array.isArray(selectedRestaurant.keywords) && selectedRestaurant.keywords.length > 0) && (
                 <div className="px-6 pb-4">
                   <p className="text-sm text-gray-600 mb-2 font-medium">キーワード</p>
                   <div className="flex flex-wrap gap-2">
@@ -908,25 +1916,29 @@ function App() {
               {/* 操作按钮 */}
               <div className="px-6 pb-6 flex gap-3">
                 <button 
-                  onClick={() => {
-                    if (!isLoggedIn) {
-                      setPreviousPage('map');
-                      setCurrentPage('login');
-                    } else {
-                      // 收藏功能待实现
-                    }
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 bg-black text-white py-3 rounded-full font-medium hover:bg-gray-800 transition-colors"
+                  onClick={() => toggleFavorite(selectedRestaurant.id)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full font-medium transition-colors ${
+                    favoriteShopIds.has(selectedRestaurant.id)
+                      ? 'bg-violet-500 text-white hover:bg-violet-600'
+                      : 'bg-black text-white hover:bg-gray-800'
+                  }`}
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg 
+                    width="20" 
+                    height="20" 
+                    viewBox="0 0 24 24" 
+                    fill={favoriteShopIds.has(selectedRestaurant.id) ? 'currentColor' : 'none'} 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                  >
                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                   </svg>
-                  <span>気になる</span>
+                  <span>{favoriteShopIds.has(selectedRestaurant.id) ? 'お気に入り済み' : '気になる'}</span>
                 </button>
                 <button 
-                  onClick={() => {
-                    // 写评论功能待实现
-                  }}
+                  onClick={openDetailPage}
                   className="flex-1 flex items-center justify-center gap-2 bg-violet-500 text-white py-3 rounded-full font-medium hover:bg-violet-600 transition-colors"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -939,45 +1951,521 @@ function App() {
             </div>
           )}
 
-          <button onClick={() => setIsUrlSubmitOpen(true)} className="absolute bottom-40 right-6 z-20 bg-violet-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:bg-violet-600 transition-colors" aria-label="スポット追加">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-          </button>
-
-          {isUrlSubmitOpen && (
-            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6" onClick={() => setIsUrlSubmitOpen(false)}>
-              <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-                <a href={`https://www.tripadvisor.com/Search?q=${getCurrentCity()}`} target="_blank" rel="noopener noreferrer" className="bg-violet-500 px-6 py-4 flex items-center justify-between hover:bg-violet-600 transition-colors cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <img src={tripadvisorIcon} alt="TripAdvisor" className="w-8 h-8 object-contain" />
-                    <h3 className="text-white font-bold text-lg">TripAdvisor site</h3>
+          {/* 検索結果画面（筛选菜单按下检索后显示） */}
+          {isSearchOpen && (
+            <div className="fixed inset-x-0 top-8 bottom-6 z-40 pointer-events-none w-full overflow-x-hidden">
+              <div className="mx-auto max-w-md h-full px-6 pointer-events-auto w-full">
+                <div className="h-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                  <div className="px-4 pt-4 pb-3 border-b border-gray-200 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">検索結果</p>
+                      <p className="text-xs text-slate-500">{isSearching ? '検索中…' : `${shops.length} 件`}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsSearchOpen(false);
+                        setSearchError(null);
+                      }}
+                      className="bg-gray-100 hover:bg-gray-200 text-slate-700 rounded-full p-2 transition-colors"
+                      aria-label="閉じる"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsUrlSubmitOpen(false); }} className="text-white hover:bg-white/20 rounded-full p-1 transition-colors">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M4 4L16 16M16 4L4 16" />
-                    </svg>
-                  </button>
-                </a>
-                <div className="p-6 space-y-6">
-                  <p className="text-sm text-slate-700 leading-relaxed">気になるレストラン・ホテル・スポットを見つけてワクワクする詳細ページのURLを管理者さんにポイっと送ってくださいね!</p>
-                  <input type="url" value={restaurantUrl} onChange={(e) => setRestaurantUrl(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-violet-500 focus:outline-none transition-colors" />
-                  <button 
-                    onClick={() => { 
-                      alert('URL送信完了！'); 
-                      setRestaurantUrl(''); 
-                      setIsUrlSubmitOpen(false); 
-                    }} 
-                    className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-                    </svg>
-                    URL送る
-                  </button>
+
+                  {/* 並び替えボタン */}
+                  <div className="px-4 py-3 flex gap-2">
+                    {[
+                      { by: 'spicy', label: '辛さ' },
+                      { by: 'clean', label: '清潔度' },
+                      { by: 'comfort', label: '快適度' },
+                      { by: 'crowd', label: '混雑度' },
+                    ].map((s) => {
+                      const active = searchSort.by === s.by;
+                      const arrow = active ? (searchSort.dir === 'asc' ? '▲' : '▼') : '▼';
+                      return (
+                        <button
+                          key={s.by}
+                          type="button"
+                          onClick={() => handleSearchSortClick(s.by)}
+                          className={`flex-1 rounded-full px-3 py-2 text-xs font-semibold border transition-colors ${
+                            active ? 'bg-violet-500 text-white border-violet-500' : 'bg-white text-slate-700 border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {s.label} {arrow}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {searchError && (
+                    <div className="px-4 pb-2 text-xs text-red-600">{searchError}</div>
+                  )}
+
+                  <div className="flex-1 overflow-y-auto hide-scrollbar px-4 pb-4 space-y-4">
+                    {shops.map((shop) => {
+                      const photos = parsePhotoUrls(shop.photo_url).slice(0, 3);
+                      return (
+                        <button
+                          key={shop.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRestaurant(shop);
+                            focusShopOnMap(shop);
+                            setIsSearchOpen(false);
+                            // 下部の詳細カードのみ表示（90vh の詳細ドロワーは開かない）
+                            setCurrentPage('map');
+                          }}
+                          className="w-full text-left bg-white rounded-2xl shadow-[0_10px_25px_rgba(15,23,42,0.12)] border border-gray-100 overflow-hidden"
+                        >
+                          <div className="p-4 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-base font-bold text-slate-900 truncate">{shop.name}</p>
+                                <div className="flex items-center gap-1">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="2">
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                  </svg>
+                                  <span className="text-sm font-semibold text-slate-700">{Number(shop.avg_rating || 0).toFixed(1)}</span>
+                                </div>
+                              </div>
+                              {Array.isArray(shop.keywords) && shop.keywords.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500">
+                                  {shop.keywords.slice(0, 4).map((k) => (
+                                    <span key={k}>{k}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              aria-label="お気に入り"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleFavorite(shop.id);
+                              }}
+                              className={`shrink-0 rounded-full p-2 transition-colors ${
+                                favoriteShopIds.has(shop.id)
+                                  ? 'text-violet-500 bg-violet-50'
+                                  : 'text-slate-300 hover:text-violet-500 hover:bg-violet-50'
+                              }`}
+                            >
+                              <svg 
+                                width="18" 
+                                height="18" 
+                                viewBox="0 0 24 24" 
+                                fill={favoriteShopIds.has(shop.id) ? 'currentColor' : 'none'} 
+                                stroke="currentColor" 
+                                strokeWidth="2.2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                              >
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="px-4 pb-3">
+                            <div className="grid grid-cols-3 gap-2">
+                              {photos.length > 0 ? (
+                                photos.map((u, idx) => (
+                                  <div key={`${u}-${idx}`} className="h-20 rounded-xl overflow-hidden bg-gray-100">
+                                    <img src={u} alt={`${shop.name}-${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="col-span-3 h-20 rounded-xl bg-gray-100 flex items-center justify-center text-xs text-slate-400">
+                                  no photo
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="px-4 pb-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-900">辛さレベル</span>
+                                <span className="text-sm font-bold text-slate-900">{shop.spicy_level || 0}</span>
+                              </div>
+                              <div className="flex gap-1 w-[116px] justify-end">
+                                {[1, 2, 3, 4, 5].map((lv) => (
+                                  <img key={lv} src={spiceIconDetail} alt="spicy" className={`w-5 h-5 ${lv <= (shop.spicy_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-900">清潔度</span>
+                                <span className="text-sm font-bold text-slate-900">{shop.clean_level || 0}</span>
+                              </div>
+                              <div className="flex gap-1 w-[116px] justify-end">
+                                {[1, 2, 3, 4, 5].map((lv) => (
+                                  <img key={lv} src={cleanlinessIconDetail} alt="clean" className={`w-5 h-5 ${lv <= (shop.clean_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                                ))}
+                              </div>
+                            </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-900">快適度</span>
+                              <span className="text-sm font-bold text-slate-900">{shop.comfortable_level || 0}</span>
+                            </div>
+                            <div className="flex gap-1 w-[116px] justify-end">
+                              {[1, 2, 3, 4, 5].map((lv) => (
+                                <img key={lv} src={comfortIconDetail} alt="comfort" className={`w-5 h-5 ${lv <= (shop.comfortable_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-900">混雑度</span>
+                              <span className="text-sm font-bold text-slate-900">{shop.congestion_level || 0}</span>
+                            </div>
+                            <div className="flex gap-1 w-[116px] justify-end">
+                              {[1, 2, 3, 4, 5].map((lv) => (
+                                <img key={lv} src={crowdIconDetail} alt="crowd" className={`w-5 h-5 object-contain ${lv <= (shop.congestion_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                              ))}
+                            </div>
+                          </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
+          )}
+
+          {/* 詳細オーバーレイ（背景は地図のまま） */}
+          {isDetailOpen && selectedRestaurant && (
+            <div className="fixed inset-0 z-50 pointer-events-none w-full overflow-x-hidden">
+              {/* 固定位置的关闭按钮 - 始终在视口右上角 */}
+              <button
+                onClick={closeDetailPage}
+                className="fixed top-24 z-[60] bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors pointer-events-auto"
+                aria-label="閉じる"
+                style={{ 
+                  right: 'max(1rem, calc((100vw - min(100vw, 448px)) / 2 + 1rem))'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+              <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-md max-h-[90vh] bg-white rounded-t-3xl shadow-2xl overflow-y-auto hide-scrollbar pointer-events-auto" style={{ maxHeight: '90dvh' }}>
+                {/* 画像 */}
+                <div className="relative h-56 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-100 to-purple-200">
+
+                  {selectedRestaurantPhotoUrls.length > 0 && (
+                    <div
+                      ref={photoCarouselRef}
+                      className="absolute inset-0 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar cursor-grab active:cursor-grabbing select-none"
+                      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+                      onScroll={(e) => {
+                        const el = e.currentTarget;
+                        if (!el.clientWidth) return;
+                        const idx = Math.round(el.scrollLeft / el.clientWidth);
+                        if (idx !== activePhotoIndex) setActivePhotoIndex(idx);
+                      }}
+                      onPointerDown={onCarouselPointerDown}
+                      onPointerMove={onCarouselPointerMove}
+                      onPointerUp={onCarouselPointerUpOrCancel}
+                      onPointerCancel={onCarouselPointerUpOrCancel}
+                    >
+                      {selectedRestaurantPhotoUrls.map((url, idx) => (
+                        <div key={`${url}-${idx}`} className="w-full h-full flex-shrink-0 snap-center">
+                          <img
+                            src={url}
+                            alt={`${selectedRestaurant.name} ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            draggable={false}
+                            onDragStart={(ev) => ev.preventDefault()}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedRestaurantPhotoUrls.length === 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <svg className="w-16 h-16 mx-auto text-violet-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p className="text-violet-600 text-sm font-medium">{selectedRestaurant.name}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />
+                  <div className="absolute bottom-4 left-5 right-5 z-10 pointer-events-none">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-white text-2xl font-extrabold">{selectedRestaurant.name}</h3>
+                      <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="2">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                        <span className="text-white text-sm font-semibold">{selectedRestaurant.avg_rating?.toFixed?.(1) ?? '0.0'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 指示点 */}
+                {selectedRestaurantPhotoUrls.length > 1 && (
+                  <div className="flex justify-center gap-2 pt-5 pb-8">
+                    {selectedRestaurantPhotoUrls.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        aria-label={`写真 ${idx + 1}`}
+                        onClick={() => scrollToPhotoIndex(idx)}
+                        className={`h-2 w-2 rounded-full transition-colors ${idx === activePhotoIndex ? 'bg-violet-500' : 'bg-gray-300'}`}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* 评论按钮とお気に入りボタン */}
+                <div className={`px-6 ${selectedRestaurantPhotoUrls.length > 1 ? '' : 'mt-8'} space-y-3`}>
+                  <button
+                    onClick={() => setIsWriteReviewOpen(true)}
+                    className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" />
+                      <path d="M4 20h16" />
+                    </svg>
+                    独特口コミ書く
+                  </button>
+                  <button
+                    onClick={() => toggleFavorite(selectedRestaurant.id)}
+                    className={`w-full py-3 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 ${
+                      favoriteShopIds.has(selectedRestaurant.id)
+                        ? 'bg-violet-100 text-violet-600 hover:bg-violet-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <svg 
+                      width="18" 
+                      height="18" 
+                      viewBox="0 0 24 24" 
+                      fill={favoriteShopIds.has(selectedRestaurant.id) ? 'currentColor' : 'none'} 
+                      stroke="currentColor" 
+                      strokeWidth="2.2" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round"
+                    >
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                    {favoriteShopIds.has(selectedRestaurant.id) ? 'お気に入り済み' : 'お気に入りに追加'}
+                  </button>
+                </div>
+
+                {/* 关键词 */}
+                {(selectedRestaurant.keywords && Array.isArray(selectedRestaurant.keywords) && selectedRestaurant.keywords.length > 0) && (
+                  <div className="px-6 pt-6">
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRestaurant.keywords.map((kw, idx) => (
+                        <span key={`${kw}-${idx}`} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 等级 */}
+                <div className="px-6 pt-6">
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: '辛さレベル', value: selectedRestaurant.spicy_level, icon: spiceIconDetail, alt: 'spicy' },
+                      { label: '清潔度', value: selectedRestaurant.clean_level, icon: cleanlinessIconDetail, alt: 'cleanliness' },
+                      { label: '快適度', value: selectedRestaurant.comfortable_level, icon: comfortIconDetail, alt: 'comfort' },
+                      { label: '混雑度', value: selectedRestaurant.congestion_level, icon: crowdIconDetail, alt: 'crowd' },
+                    ].map(({ label, value, icon, alt }) => (
+                      <div key={label} className="flex flex-col gap-1.5">
+                        <span className="text-xs text-gray-600 font-medium">{label}</span>
+                        <div className="flex gap-0.5 items-center">
+                          {[1, 2, 3, 4, 5].map((level) => {
+                            const isActive = level <= (value || 0);
+                            return (
+                              <img
+                                key={level}
+                                src={icon}
+                                alt={alt}
+                                className={`w-4 h-4 object-contain ${isActive ? 'opacity-100' : 'opacity-30'}`}
+                              />
+                            );
+                          })}
+                          <span className="ml-1.5 text-xs font-bold text-gray-700">{value || 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 用户评论 */}
+                <div className="px-6 pt-8 pb-32">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-slate-900">口コミ</h4>
+                    <span className="text-xs text-slate-500">{currentReviews.length} 件</span>
+                  </div>
+
+                  {currentReviews.length === 0 ? (
+                    <div className="mt-4 text-sm text-slate-500">まだ口コミがありません。最初の口コミを書いてみましょう。</div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {currentReviews.map((r) => (
+                        <div key={r.id} className="border border-gray-200 rounded-xl p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-semibold">
+                              {(r.name || 'G')[0]}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-semibold text-slate-900">{r.name}</p>
+                                <p className="text-xs text-slate-500">{new Date(r.createdAt).toLocaleDateString()}</p>
+                              </div>
+                              <p className="mt-2 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{r.text}</p>
+
+                              {r.ratings && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <span className="text-[11px] px-2 py-1 rounded-md bg-red-50 text-red-600 border border-red-100">辛さ {r.ratings.spicy}</span>
+                                  <span className="text-[11px] px-2 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">清潔度 {r.ratings.clean}</span>
+                                  <span className="text-[11px] px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100">快適度 {r.ratings.comfort}</span>
+                                  <span className="text-[11px] px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-100">混雑度 {r.ratings.crowd}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Write review modal */}
+                {isWriteReviewOpen && (
+                  <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6" onClick={() => setIsWriteReviewOpen(false)}>
+                    <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+                      <div className="bg-violet-500 p-5 relative">
+                        <button
+                          onClick={() => setIsWriteReviewOpen(false)}
+                          className="absolute top-3 right-3 text-white/90 hover:text-white bg-white/15 hover:bg-white/25 rounded-full p-2 transition-colors"
+                          aria-label="閉じる"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+
+                        <p className="text-white text-sm font-semibold leading-snug">
+                          あなたの口コミが他のお客様の参考になります、<br />
+                          お気に入りポイントを一言でも教えてください！
+                        </p>
+
+                        <div className="mt-4 bg-white rounded-xl p-3">
+                          <textarea
+                            value={reviewForm.text}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, text: e.target.value }))}
+                            className="w-full min-h-[140px] bg-white border-none focus:outline-none resize-none text-slate-800 text-sm"
+                            placeholder="ここに口コミを書く..."
+                          />
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-4 gap-2">
+                          {[
+                            { key: 'spicy', label: '辛さ' },
+                            { key: 'clean', label: '清潔度' },
+                            { key: 'comfort', label: '快適度' },
+                            { key: 'crowd', label: '混雑度' },
+                          ].map(({ key, label }) => (
+                            <div key={key} className="relative w-full">
+                              <select
+                                value={reviewForm[key]}
+                                onChange={(e) => setReviewForm((p) => ({ ...p, [key]: e.target.value }))}
+                                className="w-full appearance-none bg-white/95 text-violet-700 text-[11px] font-semibold px-1.5 py-2 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-white/60 text-center [text-align-last:center]"
+                              >
+                                <option value="">{label}▼</option>
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                  <option key={n} value={n}>
+                                    {label} {n}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-5 flex justify-center">
+                          <button
+                            onClick={submitReview}
+                            className="bg-white text-violet-600 font-extrabold px-8 py-3 rounded-full shadow-lg hover:bg-white/95 transition-colors flex items-center gap-2"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                            </svg>
+                            シェアする
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isDetailOpen && (
+            <>
+              <button onClick={() => setIsUrlSubmitOpen(true)} className="absolute bottom-40 right-6 z-20 bg-violet-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:bg-violet-600 transition-colors" aria-label="スポット追加">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+              </button>
+
+              {isUrlSubmitOpen && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6" onClick={() => setIsUrlSubmitOpen(false)}>
+                  <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+                    <a href={`https://www.tripadvisor.com/Search?q=${getCurrentCity()}`} target="_blank" rel="noopener noreferrer" className="bg-violet-500 px-6 py-4 flex items-center justify-between hover:bg-violet-600 transition-colors cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <img src={tripadvisorIcon} alt="TripAdvisor" className="w-8 h-8 object-contain" />
+                        <h3 className="text-white font-bold text-lg">TripAdvisor site</h3>
+                      </div>
+                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsUrlSubmitOpen(false); }} className="text-white hover:bg-white/20 rounded-full p-1 transition-colors">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M4 4L16 16M16 4L4 16" />
+                        </svg>
+                      </button>
+                    </a>
+                    <div className="p-6 space-y-6">
+                      <p className="text-sm text-slate-700 leading-relaxed">気になるレストラン・ホテル・スポットを見つけてワクワクする詳細ページのURLを管理者さんにポイっと送ってくださいね!</p>
+                      <input type="url" value={restaurantUrl} onChange={(e) => setRestaurantUrl(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-violet-500 focus:outline-none transition-colors" />
+                      <button 
+                        onClick={() => { 
+                          alert('URL送信完了！'); 
+                          setRestaurantUrl(''); 
+                          setIsUrlSubmitOpen(false); 
+                        }} 
+                        className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                        </svg>
+                        URL送る
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
@@ -991,7 +2479,21 @@ function App() {
         <header className="relative h-40 shrink-0 bg-cover bg-center" style={{ backgroundImage: `url(${heroImg})` }}>
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/25 to-transparent" />
           <div className="relative flex items-start justify-between px-6 pt-8">
-            <button onClick={() => { setPreviousPage('home'); setCurrentPage('login'); }} className="rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30">ログイン</button>
+            {isLoggedIn && currentUser ? (
+              <button 
+                onClick={() => setIsMenuOpen(true)} 
+                className="rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30"
+              >
+                {currentUser.name || currentUser.email}
+              </button>
+            ) : (
+              <button 
+                onClick={() => { setPreviousPage('home'); setCurrentPage('login'); }} 
+                className="rounded-md bg-white/90 px-5 py-1 text-sm font-semibold text-violet-500 shadow-lg shadow-violet-500/30"
+              >
+                ログイン
+              </button>
+            )}
             <button onClick={() => setIsMenuOpen(true)} className="rounded-md bg-violet-500 p-4 text-white shadow-lg hover:bg-violet-600 transition-colors" aria-label="メニュー">
               <div className="space-y-1.5">
                 <span className="block h-[2.5px] w-4 rounded-full bg-white" />
@@ -1051,38 +2553,227 @@ function App() {
             {lockedSections.map((section) => (
               <div key={section.id} className="space-y-3">
                 <p className="text-sm font-medium text-slate-700">{section.title}</p>
-                <button 
-                  onClick={() => {
-                    if (!isLoggedIn) {
+                {!isLoggedIn && (
+                  <button 
+                    onClick={() => {
                       setPreviousPage('home');
                       setCurrentPage('login');
-                    }
-                  }}
-                  className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
-                >
-                  <img src={lockIcon} alt="Lock" className="h-4 w-4" />
-                  <span className="font-medium">アカウント登録で表示</span>
-                </button>
+                    }}
+                    className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
+                  >
+                    <img src={lockIcon} alt="Lock" className="h-4 w-4" />
+                    <span className="font-medium">アカウント登録で表示</span>
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
 
-        <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} />
-        <FilterPanel isOpen={isFilterOpen} onClose={handleCloseFilter} filters={filters} onFilterChange={handleFilterChange} selectedCity={selectedCity} onCitySelect={handleCitySelect} isCitySelectOpen={isCitySelectOpen} setIsCitySelectOpen={setIsCitySelectOpen} selectedType={selectedType} setSelectedType={setSelectedType}  onSearch={searchShops}  />
+        <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} />
+        <FilterPanel
+          isOpen={isFilterOpen}
+          onClose={handleCloseFilter}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          selectedCity={selectedCity}
+          onCitySelect={handleCitySelect}
+          isCitySelectOpen={isCitySelectOpen}
+          setIsCitySelectOpen={setIsCitySelectOpen}
+          selectedTypes={selectedTypes}
+          setSelectedTypes={setSelectedTypes}
+          keyword={keyword}
+          setKeyword={setKeyword}
+          availableKeywords={keywordOptions}
+          selectedKeywords={selectedKeywords}
+          setSelectedKeywords={setSelectedKeywords}
+          onSearch={searchShops}
+        />
       </div>
-      
-      {shops.length > 0 && (
-        <pre className="text-xs p-2 bg-slate-100 max-h-40 overflow-auto">
-          {JSON.stringify(shops, null, 2)}
-        </pre>
-      )}
-      {shops.length === 0 && (
-        <div className="text-xs p-2 bg-slate-100 text-gray-500">
-          検索結果がありません。検索を実行してください。
+
+      {/* 検索結果オーバーレイ（ホーム背景のまま表示） */}
+      {isSearchOpen && (
+        <div className="fixed inset-0 z-40 pointer-events-none">
+          <div className="absolute inset-x-0 top-8 bottom-6 mx-auto max-w-md px-6 pointer-events-auto">
+            <div className="h-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+              <div className="px-4 pt-4 pb-3 border-b border-gray-200 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">検索結果</p>
+                  <p className="text-xs text-slate-500">{isSearching ? '検索中…' : `${shops.length} 件`}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(false);
+                    setSearchError(null);
+                  }}
+                  className="bg-gray-100 hover:bg-gray-200 text-slate-700 rounded-full p-2 transition-colors"
+                  aria-label="閉じる"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="px-4 py-3 flex gap-2">
+                {[
+                  { by: 'spicy', label: '辛さ' },
+                  { by: 'clean', label: '清潔度' },
+                  { by: 'comfort', label: '快適度' },
+                  { by: 'crowd', label: '混雑度' },
+                ].map((s) => {
+                  const active = searchSort.by === s.by;
+                  const arrow = active ? (searchSort.dir === 'asc' ? '▲' : '▼') : '▼';
+                  return (
+                    <button
+                      key={s.by}
+                      type="button"
+                      onClick={() => handleSearchSortClick(s.by)}
+                      className={`flex-1 rounded-full px-3 py-2 text-xs font-semibold border transition-colors ${
+                        active ? 'bg-violet-500 text-white border-violet-500' : 'bg-white text-slate-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {s.label} {arrow}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {searchError && <div className="px-4 pb-2 text-xs text-red-600">{searchError}</div>}
+
+              <div className="flex-1 overflow-y-auto hide-scrollbar px-4 pb-4 space-y-4">
+                {shops.map((shop) => {
+                  const photos = parsePhotoUrls(shop.photo_url).slice(0, 3);
+                  return (
+                    <button
+                      key={shop.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRestaurant(shop);
+                        focusShopOnMap(shop);
+                        setIsSearchOpen(false);
+                        // 下部の詳細カードのみ表示（90vh の詳細ドロワーは開かない）
+                        setCurrentPage('map');
+                      }}
+                      className="w-full text-left bg-white rounded-2xl shadow-[0_10px_25px_rgba(15,23,42,0.12)] border border-gray-100 overflow-hidden"
+                    >
+                      <div className="p-4 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-base font-bold text-slate-900 truncate">{shop.name}</p>
+                            <div className="flex items-center gap-1">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                              <span className="text-sm font-semibold text-slate-700">{Number(shop.avg_rating || 0).toFixed(1)}</span>
+                            </div>
+                          </div>
+                          {Array.isArray(shop.keywords) && shop.keywords.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500">
+                              {shop.keywords.slice(0, 4).map((k) => (
+                                <span key={k}>{k}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="お気に入り"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleFavorite(shop.id);
+                          }}
+                          className={`shrink-0 rounded-full p-2 transition-colors ${
+                            favoriteShopIds.has(shop.id)
+                              ? 'text-violet-500 bg-violet-50'
+                              : 'text-slate-300 hover:text-violet-500 hover:bg-violet-50'
+                          }`}
+                        >
+                          <svg 
+                            width="18" 
+                            height="18" 
+                            viewBox="0 0 24 24" 
+                            fill={favoriteShopIds.has(shop.id) ? 'currentColor' : 'none'} 
+                            stroke="currentColor" 
+                            strokeWidth="2.2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="px-4 pb-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          {photos.length > 0 ? (
+                            photos.map((u, idx) => (
+                              <div key={`${u}-${idx}`} className="h-20 rounded-xl overflow-hidden bg-gray-100">
+                                <img src={u} alt={`${shop.name}-${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                              </div>
+                            ))
+                          ) : (
+                            <div className="col-span-3 h-20 rounded-xl bg-gray-100 flex items-center justify-center text-xs text-slate-400">no photo</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="px-4 pb-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">辛さレベル</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.spicy_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={spiceIconDetail} alt="spicy" className={`w-5 h-5 ${lv <= (shop.spicy_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">清潔度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.clean_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={cleanlinessIconDetail} alt="clean" className={`w-5 h-5 ${lv <= (shop.clean_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">快適度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.comfortable_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={comfortIconDetail} alt="comfort" className={`w-5 h-5 ${lv <= (shop.comfortable_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">混雑度</span>
+                            <span className="text-sm font-bold text-slate-900">{shop.congestion_level || 0}</span>
+                          </div>
+                          <div className="flex gap-1 w-[116px] justify-end">
+                            {[1, 2, 3, 4, 5].map((lv) => (
+                              <img key={lv} src={crowdIconDetail} alt="crowd" className={`w-5 h-5 object-contain ${lv <= (shop.congestion_level || 0) ? 'opacity-100' : 'opacity-25'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       )}
-
+      
     </main>
   );
 }
