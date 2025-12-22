@@ -3,6 +3,7 @@ from flask_cors import CORS
 from models import search_shops
 import db  # ensure .env is loaded early (see db._load_dotenv_if_present)
 from login import auth_bp
+from recommend import recommend_bp
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -10,7 +11,7 @@ app.secret_key = "your-secret-key"
 
 # 認証ブループリントを登録
 app.register_blueprint(auth_bp, url_prefix="/auth")
-
+app.register_blueprint(recommend_bp, url_prefix="/recommend")
 
 
 def to_int_or_none(value):
