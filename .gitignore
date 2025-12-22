@@ -55,3 +55,4 @@ coverage/
 
 # Cursor / その他
 .cursor/
+.env
