@@ -24,11 +24,6 @@ def to_int_or_none(value):
 
 @app.route("/search_shops_json", methods=["GET"])
 def search_shops_json():
-    # 暂时移除登录检查，允许直接访问
-    # if "user_id" not in session:
-    #     return redirect("/login")
-
-        
     print("🔥 検索APIが呼ばれました")
     print("args:", request.args)
     keyword = request.args.get("keyword", '')
