@@ -12,6 +12,7 @@ app.secret_key = "your-secret-key"
 app.register_blueprint(auth_bp, url_prefix="/auth")
 
 
+
 def to_int_or_none(value):
     try:
         return int(value) if value not in (None, "") else None

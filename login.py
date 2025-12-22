@@ -115,6 +115,7 @@ def register_json():
 
     if not all([spicy_level, clean_level, comfortable_level, congestion_level]):
         return jsonify({"ok": False, "error": "評価項目が未入力です"}), 400
+<<<<<<< HEAD
     
     # 数値に変換
     try:
@@ -124,6 +125,8 @@ def register_json():
         congestion_level = int(congestion_level)
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "評価項目は1-5の数値で入力してください"}), 400
+=======
+>>>>>>> 4b666fa8370502a67adaa88af9db7f75b4c1d0a9
 
     db = get_connection()
     with db:
@@ -189,6 +192,7 @@ def logout_json():
         "ok": True,
         "message": "ログアウトしました"
     })
+<<<<<<< HEAD
 
 
 # お気に入り機能
@@ -343,3 +347,5 @@ def check_favorite_json():
         "ok": True,
         "favorites": favorite_ids
     })
+=======
+>>>>>>> 4b666fa8370502a67adaa88af9db7f75b4c1d0a9
