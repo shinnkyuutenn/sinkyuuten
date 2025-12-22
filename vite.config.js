@@ -7,6 +7,23 @@ export default defineConfig({
     host: '0.0.0.0', // 允许局域网访问
     port: 5173,
     strictPort: false,
+    // Dev proxies so the frontend can call APIs via same-origin paths.
+    // This fixes LAN/mobile access where `localhost` would point to the phone itself.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/search_shops_json': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+      },
+      '/auth': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        credentials: true,
+      },
+    },
   },
 });
 

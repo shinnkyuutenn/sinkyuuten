@@ -46,7 +46,29 @@ cd sinkyuuten
 npm install
 ```
 
+### 2.5. Neon（PostgreSQL）に接続する（推奨）
+
+このプロジェクトは **Node（`server.js`）** と **Python（`db.py`）** の両方が `NEON_DATABASE_URL`（または `DATABASE_URL`）を読みます（開発時はルートの `.env` を参照）。
+
+1) ルートの `env.example` をコピーして `.env` を作成し、Neon の接続文字列を設定：
+
+```bash
+cp env.example .env
+```
+
+2) `.env` の `NEON_DATABASE_URL=...` を Neon Dashboard の接続文字列に置き換え（`sslmode=require` を含める）
+
+補足：
+- Neon の接続文字列に `channel_binding=require` が含まれる場合でも、Node 側は互換性のため自動で除去して接続します。
+- 詳細は `NEON_SETUP.md` を参照してください。
+
 ### 3. データベースのセットアップ
+
+#### 3.1 Neon を使う場合（推奨）
+
+Neon 側にすでにスキーマ/データがある場合は **この手順は不要** です。
+
+#### 3.2 ローカル PostgreSQL を使う場合（任意）
 
 ```bash
 # PostgreSQL データベースを作成
@@ -69,7 +91,7 @@ npm run server
 **Flask サーバー（ポート 5001）:**
 ```bash
 # Python 依存関係のインストール
-pip install flask flask-cors psycopg2-binary
+pip install -r requirements.txt
 
 # Flask サーバーの起動
 python app.py
@@ -82,6 +104,19 @@ npm run dev
 ```
 
 アプリは `http://localhost:5173/` で起動します。
+
+### 5.1 開発時の API ルーティング（Vite proxy）
+
+開発時はフロントが **同一オリジン** で API を呼べるよう、Vite の proxy を利用します（モバイル/LAN でも `localhost` 問題が起きにくい設計）。
+
+- `/api/*` → `http://localhost:3001`（Node / Express）
+- `/search_shops_json` → `http://127.0.0.1:5001`（Flask）
+- `/auth/*` → `http://127.0.0.1:5001`（Flask 認証エンドポイント）
+
+そのため、フロントは下記のように **相対パス** で呼び出します：
+- `GET /api/restaurants`
+- `GET /api/keywords`
+- `GET /search_shops_json?...`
 
 ### 6. ビルド（本番環境用）
 
@@ -96,6 +131,28 @@ npm run build
 ```bash
 npm run preview
 ```
+
+## 🔌 API エンドポイント
+
+### Node.js サーバー（ポート 3001）
+- `GET /api/restaurants` - レストランデータ取得
+- `GET /api/keywords` - キーワード一覧取得
+
+### Flask サーバー（ポート 5001）
+
+#### 検索API
+- `GET /search_shops_json` - 店舗検索（キーワード、フィルター、ソート対応）
+
+#### 認証API（`/auth` プレフィックス）
+- `POST /auth/login_json` - ログイン
+- `POST /auth/register_json` - ユーザー登録
+- `GET /auth/me_json` - ログイン状態確認
+- `POST /auth/logout_json` - ログアウト
+
+#### お気に入りAPI（`/auth` プレフィックス）
+- `GET /auth/favorites_json` - お気に入り一覧取得
+- `POST /auth/favorites_json` - お気に入り追加
+- `DELETE /auth/favorites_json` - お気に入り削除
 
 ## 🔑 API設定
 
@@ -119,27 +176,15 @@ const { isLoaded } = useJsApiLoader({
 
 ### データベース接続設定
 
-**Node.js サーバー（server.js）:**
-```javascript
-const pool = new Pool({
-  user: process.env.DB_USER || 'user',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'india_reviews',
-  password: process.env.DB_PASSWORD || '',
-  port: process.env.DB_PORT || 5432,
-});
-```
+**Node.js サーバー（`server.js`）:**
+
+- 推奨：`NEON_DATABASE_URL`（または `DATABASE_URL`）の接続文字列を利用
+- 未設定の場合：`DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_PORT` を利用（ローカル向け）
 
 **Flask サーバー（db.py）:**
-```python
-conn = psycopg2.connect(
-    host=os.getenv('DB_HOST', 'localhost'),
-    database=os.getenv('DB_NAME', 'india_reviews'),
-    user=os.getenv('DB_USER', 'user'),
-    password=os.getenv('DB_PASSWORD', ''),
-    port=os.getenv('DB_PORT', '5432')
-)
-```
+
+- 推奨：`NEON_DATABASE_URL`（または `DATABASE_URL`）の接続文字列を利用
+- 未設定の場合：`DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_PORT` を利用（ローカル向け）
 
 環境変数を使用する場合は `.env` ファイルを作成してください。
 
@@ -152,17 +197,35 @@ conn = psycopg2.connect(
 
 ### 2. 検索フィルター
 - **キーワード検索**: 店舗名やキーワードで検索
+  - データベースから頻出キーワードを取得し、クイック選択タグとして表示（最大2行）
+  - キーワードは出現頻度順にソート
 - **辛さ耐性**: 0-5レベル（0 SHU - 25000 SHU）
 - **清潔重視度**: 5段階評価
 - **快適さ重視度**: 5段階評価
 - **混雑苦手度**: 5段階評価
 - **都市選択**: Hyderabad、Mumbai、Delhi
-- **カテゴリ**: 飲食店、ホテル、スポット
+- **カテゴリ**: 飲食店、ホテル、スポット（複数選択可能）
+- **検索結果画面**
+  - オーバーレイ形式で表示（背景ページを変更しない）
+  - 4つの評価項目（辛さ、清潔度、快適度、混雑度）を表示
+  - 各項目でソート可能（昇順/降順）
+  - 店舗をクリックして地図で位置確認
 
-### 3. ログイン・登録
-- ユーザーログイン
-- 新規ユーザー登録
-- 個人設定（辛さ耐性、清潔度等）
+### 3. ユーザー認証システム
+- **ログイン機能**
+  - メールアドレスとパスワードでログイン
+  - セッション管理（Flask session + cookie）
+  - ログイン状態の自動チェック
+- **新規ユーザー登録**
+  - ユーザー名、メールアドレス、パスワードで登録
+  - 個人設定（辛さ耐性、清潔度、快適度、混雑苦手度）を登録時に設定
+  - 登録後自動ログイン
+- **ログアウト機能**
+  - サイドメニューからログアウト可能
+  - ログアウト後、お気に入りデータもクリア
+- **ユーザー情報表示**
+  - ログイン後、左上角にユーザー名を表示
+  - クリックでサイドメニューを開く
 
 ### 4. マップページ
 - Google Maps 統合
@@ -170,8 +233,22 @@ conn = psycopg2.connect(
 - POI非表示設定
 - 位置ベース検索
 - TripAdvisor 連携
+- 店舗詳細カード（70vh）と詳細ページ（90vh）の2段階表示
+- 画像カルーセル（マウスドラッグ・タッチスワイプ対応）
+- 店舗評価の4項目表示（辛さ、清潔度、快適度、混雑度）
 
-### 5. スポット追加機能
+### 5. お気に入り機能
+- **お気に入り追加/削除**
+  - 店舗詳細ページ、検索結果画面からお気に入りに追加可能
+  - ハートアイコンで視覚的に表示（追加済みは紫色で表示）
+  - ログイン必須（未ログイン時はログインページへリダイレクト）
+- **お気に入り一覧**
+  - サイドメニューから「お気に入り」ページへアクセス
+  - お気に入りに追加した店舗を一覧表示
+  - 店舗をクリックして詳細を表示・地図で位置確認
+  - お気に入りから削除も可能
+
+### 6. スポット追加機能
 - TripAdvisor からのURL共有
 - 管理者への推薦送信
 
@@ -188,10 +265,13 @@ sinkyuuten/
 │   │   └── images/          # 背景画像
 │   ├── india_reviews_schema.sql  # データベーススキーマ
 │   └── test_restaurants_data.sql # テストデータ
-├── app.py                   # Flask サーバー
+├── app.py                   # Flask サーバー（検索API + 認証API）
+├── login.py                 # Flask 認証ブループリント（ログイン・登録・お気に入り）
 ├── db.py                    # データベース接続
 ├── models.py                # データモデル
 ├── server.js                # Node.js Express サーバー
+├── src/
+│   └── create_favorites_table.sql  # お気に入りテーブル作成SQL
 ├── dist/                    # ビルド出力
 ├── package.json             # Node.js 依存関係
 ├── vite.config.js          # Vite設定
@@ -202,9 +282,12 @@ sinkyuuten/
 ## 🌐 モバイル対応
 
 - レスポンシブデザイン
-- 最大幅: 448px（max-w-md）
+- **最大幅固定**: 448px（max-w-md）- デスクトップでも最大幅を固定し、内容が過度に伸びないように制限
 - タッチジェスチャー最適化
 - iOS/Android対応
+- 動的ビューポート高さ（dvh）対応
+- 横スクロール防止
+- スクロールバー非表示（機能は維持）
 
 ## 🎨 デザイン特徴
 
@@ -243,7 +326,36 @@ ISC
 
 プルリクエスト歓迎！
 
+詳細な協作ガイドは [COLLABORATION.md](./COLLABORATION.md) を参照してください。
+
 ---
 
 **作成日**: 2025年12月
-**最終更新**: 2025年12月16日
+**最終更新**: 2025年12月
+
+## 🔄 最近の更新（2025年12月）
+
+### 認証システムの実装
+- ユーザーログイン・登録・ログアウト機能を実装
+- Flask セッション管理による認証
+- ログイン状態の自動チェック
+- ログイン後、左上角にユーザー名を表示
+
+### お気に入り機能の実装
+- 店舗をお気に入りに追加/削除する機能
+- お気に入り一覧ページの実装
+- データベースに `user_favorites` テーブルを追加
+- 検索結果画面、詳細ページ、お気に入り一覧から操作可能
+
+### UI/UX の改善
+- 店舗詳細ページ（90vh）の実装
+- 画像カルーセルのマウスドラッグ対応
+- 検索結果画面をオーバーレイ形式に変更
+- 4つの評価項目（辛さ、清潔度、快適度、混雑度）を全画面で表示
+- スクロールバーを非表示に（機能は維持）
+- 最大幅を固定（デスクトップでも448pxに制限）
+- ログイン後、ロックボタンを非表示（タイトルは表示）
+
+### データベース
+- `user_favorites` テーブルの追加
+- ユーザー認証用の `users` テーブル拡張

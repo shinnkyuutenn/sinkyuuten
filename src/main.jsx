@@ -38,7 +38,6 @@ const rootElement = document.getElementById('root');
 if (!rootElement) {
   console.error('找不到root元素！');
 } else {
-  console.log('开始渲染React应用...');
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>

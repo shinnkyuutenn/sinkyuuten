@@ -26,6 +26,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 
 # Python
 __pycache__/
@@ -37,6 +39,10 @@ venv/
 env/
 ENV/
 .venv
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
 
 # データベース
 *.db
@@ -46,3 +52,6 @@ ENV/
 # 一時ファイル
 *.tmp
 *.temp
+
+# Cursor / その他
+.cursor/
