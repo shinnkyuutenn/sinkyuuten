@@ -1,12 +1,11 @@
-// 简单的 Express 服务器，用于从 PostgreSQL 数据库获取餐厅数据
+// Expressサーバー：PostgreSQLからレストランデータを取得
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// Load .env locally without requiring an extra dependency.
-// This ensures the server actually uses NEON_DATABASE_URL in dev.
+// .envファイルを読み込む（追加依存関係なし）
 function loadDotEnvIfPresent() {
   const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;
@@ -19,7 +18,7 @@ function loadDotEnvIfPresent() {
     if (idx === -1) continue;
     const key = normalized.slice(0, idx).trim();
     let val = normalized.slice(idx + 1).trim();
-    // strip matching quotes
+    // 引用符を除去
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
@@ -31,7 +30,7 @@ function loadDotEnvIfPresent() {
 
 function sanitizeDatabaseUrl(url) {
   if (!url) return url;
-  // Some Neon URLs include channel_binding=require; remove it for broader client compatibility.
+  // Neon URLのchannel_binding=requireを除去（互換性のため）
   return url
     .replace(/([?&])channel_binding=require(&|$)/, (m, sep, tail) => (tail ? sep : ''))
     .replace('?&', '?')
@@ -43,17 +42,16 @@ loadDotEnvIfPresent();
 const app = express();
 const port = 3001;
 
-// 启用 CORS
+// CORS有効化
 app.use(cors());
 app.use(express.json());
 
-// PostgreSQL 数据库连接配置
-// 支持 Neon 数据库（优先使用连接字符串）和本地数据库
+// PostgreSQL接続設定（Neon優先、ローカルはフォールバック）
 const pool = new Pool(
   process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
     ? {
         connectionString: sanitizeDatabaseUrl(process.env.NEON_DATABASE_URL || process.env.DATABASE_URL),
-        ssl: { rejectUnauthorized: false }  // Neon 需要 SSL
+        ssl: { rejectUnauthorized: false }
       }
     : {
         user: process.env.DB_USER || 'user',
@@ -66,16 +64,16 @@ const pool = new Pool(
 
 const DEBUG_LOGS = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
 
-// 测试数据库连接（可选）
+// データベース接続イベント
 pool.on('connect', () => {
-  if (DEBUG_LOGS) console.log('数据库连接成功');
+  if (DEBUG_LOGS) console.log('データベース接続成功');
 });
 
 pool.on('error', (err) => {
-  console.error('数据库连接错误:', err);
+  console.error('データベース接続エラー:', err);
 });
 
-// 获取所有餐厅的 API 端点（包含关键词）
+// 全レストランデータ取得API（キーワード含む）
 app.get('/api/restaurants', async (req, res) => {
   try {
     const query = `
@@ -100,22 +98,22 @@ app.get('/api/restaurants', async (req, res) => {
     `;
     const result = await pool.query(query);
     if (DEBUG_LOGS) {
-      console.log('查询结果总数:', result.rows.length);
+      console.log('クエリ結果数:', result.rows.length);
       const typeCount = result.rows.reduce((acc, row) => {
         acc[row.shop_type] = (acc[row.shop_type] || 0) + 1;
         return acc;
       }, {});
-      console.log('数据类型统计:', typeCount);
+      console.log('データタイプ統計:', typeCount);
     }
     
     res.json(result.rows);
   } catch (error) {
-    console.error('获取餐厅数据错误:', error);
-    res.status(500).json({ error: '获取餐厅数据失败' });
+    console.error('レストランデータ取得エラー:', error);
+    res.status(500).json({ error: 'レストランデータ取得失敗' });
   }
 });
 
-// 根据城市 ID 获取餐厅的 API 端点（包含关键词）
+// 都市ID別レストランデータ取得API（キーワード含む）
 app.get('/api/restaurants/city/:cityId', async (req, res) => {
   try {
     const { cityId } = req.params;
@@ -140,12 +138,12 @@ app.get('/api/restaurants/city/:cityId', async (req, res) => {
     const result = await pool.query(query, [cityId]);
     res.json(result.rows);
   } catch (error) {
-    console.error('获取餐厅数据错误:', error);
-    res.status(500).json({ error: '获取餐厅数据失败' });
+    console.error('レストランデータ取得エラー:', error);
+    res.status(500).json({ error: 'レストランデータ取得失敗' });
   }
 });
 
-// 根据筛选条件获取餐厅的 API 端点（包含关键词）
+// フィルター条件別レストランデータ取得API（キーワード含む）
 app.get('/api/restaurants/filter', async (req, res) => {
   try {
     const { city_id, shop_type, spicy_level, clean_level, comfortable_level, congestion_level, keyword } = req.query;
@@ -214,17 +212,17 @@ app.get('/api/restaurants/filter', async (req, res) => {
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
-    console.error('获取餐厅数据错误:', error);
-    res.status(500).json({ error: '获取餐厅数据失败' });
+    console.error('レストランデータ取得エラー:', error);
+    res.status(500).json({ error: 'レストランデータ取得失敗' });
   }
 });
 
-// 根据关键词搜索餐厅的 API 端点
+// キーワード検索API
 app.get('/api/restaurants/search', async (req, res) => {
   try {
     const { keyword } = req.query;
     if (!keyword) {
-      return res.status(400).json({ error: '关键词参数是必需的' });
+      return res.status(400).json({ error: 'キーワードパラメータが必要です' });
     }
     
     const query = `
@@ -248,29 +246,30 @@ app.get('/api/restaurants/search', async (req, res) => {
     const result = await pool.query(query, [`%${keyword}%`]);
     res.json(result.rows);
   } catch (error) {
-    console.error('搜索餐厅数据错误:', error);
-    res.status(500).json({ error: '搜索餐厅数据失败' });
+    console.error('レストラン検索エラー:', error);
+    res.status(500).json({ error: 'レストラン検索失敗' });
   }
 });
 
-// 获取所有关键词的 API 端点
+// 全キーワード取得API
 app.get('/api/keywords', async (req, res) => {
   try {
     const query = 'SELECT id, word FROM public.keywords ORDER BY word';
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error('获取关键词错误:', error);
-    res.status(500).json({ error: '获取关键词失败' });
+    console.error('キーワード取得エラー:', error);
+    res.status(500).json({ error: 'キーワード取得失敗' });
   }
 });
 
-// 健康检查端点
+// ヘルスチェック
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(port, () => {
-  console.log(`服务器运行在 http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`サーバー起動: http://localhost:${port}`);
+  console.log(`LANアクセス: http://172.27.176.118:${port}`);
 });
 

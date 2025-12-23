@@ -44,8 +44,7 @@ def check_password(password, stored_hash):
 
 @auth_bp.route("/login_json", methods=["POST"])
 def login_json():
-    print("🔥 POST /login_json")
-
+    """ログインAPI"""
     email = request.form.get("email")
     password = request.form.get("password")
 
@@ -92,7 +91,7 @@ def login_json():
 
 @auth_bp.route("/register_json", methods=["POST"])
 def register_json():
-    print("🔥 POST /register_json")
+    """ユーザー登録API"""
 
     name = request.form.get("name")
     email = request.form.get("email")
@@ -115,7 +114,6 @@ def register_json():
 
     if not all([spicy_level, clean_level, comfortable_level, congestion_level]):
         return jsonify({"ok": False, "error": "評価項目が未入力です"}), 400
-<<<<<<< HEAD
     
     # 数値に変換
     try:
@@ -125,8 +123,6 @@ def register_json():
         congestion_level = int(congestion_level)
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "評価項目は1-5の数値で入力してください"}), 400
-=======
->>>>>>> 4b666fa8370502a67adaa88af9db7f75b4c1d0a9
 
     db = get_connection()
     with db:
@@ -174,14 +170,40 @@ def me_json():
             "logged_in": False
         }), 401
 
-    return jsonify({
-        "ok": True,
-        "logged_in": True,
-        "user": {
-            "id": session["user_id"],
-            "name": session["user_name"]
-        }
-    })
+    # データベースからユーザー情報を取得（emailを含む）
+    db = get_connection()
+    try:
+        with db:
+            cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute(
+                "SELECT id, name, email FROM public.users WHERE id = %s",
+                (session["user_id"],)
+            )
+            user = cur.fetchone()
+            
+            if not user:
+                return jsonify({
+                    "ok": False,
+                    "logged_in": False
+                }), 401
+            
+            return jsonify({
+                "ok": True,
+                "logged_in": True,
+                "user": {
+                    "id": user["id"],
+                    "name": user["name"],
+                    "email": user["email"]
+                }
+            })
+    except Exception as e:
+        print(f"ユーザー情報取得エラー: {e}")
+        return jsonify({
+            "ok": False,
+            "logged_in": False
+        }), 500
+    finally:
+        db.close()
 
 
 
@@ -192,7 +214,6 @@ def logout_json():
         "ok": True,
         "message": "ログアウトしました"
     })
-<<<<<<< HEAD
 
 
 # お気に入り機能
@@ -347,5 +368,3 @@ def check_favorite_json():
         "ok": True,
         "favorites": favorite_ids
     })
-=======
->>>>>>> 4b666fa8370502a67adaa88af9db7f75b4c1d0a9
