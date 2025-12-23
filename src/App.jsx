@@ -44,7 +44,7 @@ const cityCards = [
 // ロックされたセクション
 const lockedSections = [
   { id: 'personal', title: 'おすすめの場所' },
-  { id: 'latest', title: '感性にあった口コミ' },
+  { id: 'latest', title: '感性が口コミ' },
   { id: 'article', title: '自作記事' },
 ];
 
@@ -565,6 +565,7 @@ function App() {
     clean: '',
     comfort: '',
     crowd: '',
+    avg_rating: '',
   });
   const [reviewsByShopId, setReviewsByShopId] = useState(() => {
     try {
@@ -693,7 +694,7 @@ function App() {
 
   const closeDetailPage = () => {
     setIsWriteReviewOpen(false);
-    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '', avg_rating: '' });
     // 詳細を閉じ、下部の詳細カードも閉じる
     setSelectedRestaurant(null);
     setCurrentPage('map');
@@ -725,8 +726,10 @@ function App() {
     const clean = Number(reviewForm.clean);
     const comfort = Number(reviewForm.comfort);
     const crowd = Number(reviewForm.crowd);
+    const avg_rating = reviewForm.avg_rating !== '' ? Number(reviewForm.avg_rating) : null;
     if (!text) return;
     if (![spicy, clean, comfort, crowd].every((n) => Number.isFinite(n) && n >= 1 && n <= 5)) return;
+    if (avg_rating !== null && (!Number.isFinite(avg_rating) || avg_rating < 0 || avg_rating > 5)) return;
 
     const entry = {
       id: `${Date.now()}`,
@@ -734,6 +737,7 @@ function App() {
       text,
       createdAt: new Date().toISOString(),
       ratings: { spicy, clean, comfort, crowd },
+      avg_rating: avg_rating,
     };
 
     setReviewsByShopId((prev) => {
@@ -743,7 +747,7 @@ function App() {
     });
 
     setIsWriteReviewOpen(false);
-    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '', avg_rating: '' });
   };
 
   // お店検索（フィルターパネルの「検索」から呼ぶ）
@@ -2718,20 +2722,17 @@ function App() {
           {/* 詳細オーバーレイ（背景は地図のまま） */}
           {isDetailOpen && selectedRestaurant && (
             <div className="fixed inset-0 z-50 pointer-events-none w-full overflow-x-hidden">
-              {/* 固定位置的关闭按钮 - 始终在视口右上角 */}
-              <button
-                onClick={closeDetailPage}
-                className="fixed top-24 z-[60] bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors pointer-events-auto"
-                aria-label="閉じる"
-                style={{ 
-                  right: 'max(1rem, calc((100vw - min(100vw, 448px)) / 2 + 1rem))'
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
               <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-md max-h-[90vh] bg-white rounded-t-3xl shadow-2xl overflow-y-auto hide-scrollbar pointer-events-auto" style={{ maxHeight: '90dvh' }}>
+                {/* 固定位置的关闭按钮 - 始终在详情页右上方 */}
+                <button
+                  onClick={closeDetailPage}
+                  className="absolute top-4 right-4 z-[60] bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors pointer-events-auto"
+                  aria-label="閉じる"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
                 {/* 画像 */}
                 <div className="relative h-56 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-100 to-purple-200">
 
@@ -2916,6 +2917,9 @@ function App() {
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">清潔度 {r.ratings.clean}</span>
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100">快適度 {r.ratings.comfort}</span>
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-100">混雑度 {r.ratings.crowd}</span>
+                                  {r.avg_rating !== null && r.avg_rating !== undefined && (
+                                    <span className="text-[11px] px-2 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-100">総合評価 {r.avg_rating}</span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2977,6 +2981,23 @@ function App() {
                               </select>
                             </div>
                           ))}
+                        </div>
+
+                        <div className="mt-3">
+                          <div className="relative w-full">
+                            <select
+                              value={reviewForm.avg_rating}
+                              onChange={(e) => setReviewForm((p) => ({ ...p, avg_rating: e.target.value }))}
+                              className="w-full appearance-none bg-white/95 text-violet-700 text-[11px] font-semibold px-1.5 py-2 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-white/60 text-center [text-align-last:center]"
+                            >
+                              <option value="">総合評価▼</option>
+                              {[0, 1, 2, 3, 4, 5].map((n) => (
+                                <option key={n} value={n}>
+                                  総合評価 {n}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
                         <div className="mt-5 flex justify-center">
