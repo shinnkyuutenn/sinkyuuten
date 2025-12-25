@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from db import get_connection
 
 auth_review = Blueprint("auth_review", __name__)
@@ -7,7 +7,10 @@ auth_review = Blueprint("auth_review", __name__)
 def review_json():
     print("レビュー")
 
-    user_id = request.form.get("user_id")
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "ログインしてください"}), 401
+
     shop_id = request.form.get("shop_id")
     review = request.form.get("text")
     avg_rating = request.form.get("avg_rating")
