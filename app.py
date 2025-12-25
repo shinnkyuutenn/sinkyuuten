@@ -5,6 +5,7 @@ import db
 from login import auth_bp
 from recommend import recommend_bp
 from add_shop import add_shop_bp
+from review import auth_review
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -14,6 +15,7 @@ app.secret_key = "your-secret-key"
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(recommend_bp, url_prefix="/recommend")
 app.register_blueprint(add_shop_bp, url_prefix="/shop")
+app.register_blueprint(auth_review)
 
 
 def to_int_or_none(value):
