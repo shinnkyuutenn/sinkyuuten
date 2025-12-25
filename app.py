@@ -1,16 +1,19 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from models import search_shops
-import db  # ensure .env is loaded early (see db._load_dotenv_if_present)
+import db
 from login import auth_bp
+from recommend import recommend_bp
+from add_shop import add_shop_bp
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 app.secret_key = "your-secret-key"
 
-# 認証ブループリントを登録
+# ブループリント登録
 app.register_blueprint(auth_bp, url_prefix="/auth")
-
+app.register_blueprint(recommend_bp, url_prefix="/recommend")
+app.register_blueprint(add_shop_bp, url_prefix="/shop")
 
 
 def to_int_or_none(value):
@@ -22,7 +25,7 @@ def to_int_or_none(value):
 
 @app.route("/search_shops_json", methods=["GET"])
 def search_shops_json():
-
+    """店舗検索API"""
     keyword = request.args.get("keyword", '')
     keywords = request.args.get("keywords", '')
     shop_type = request.args.get("shop_type", '')
@@ -57,4 +60,4 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    app.run(debug=True, host='0.0.0.0', port=5001)  # LANアクセス許可

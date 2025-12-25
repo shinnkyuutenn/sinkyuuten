@@ -43,8 +43,8 @@ const cityCards = [
 
 // ロックされたセクション
 const lockedSections = [
-  { id: 'personal', title: 'あなたの感性にあった口コミ' },
-  { id: 'latest', title: '最新の口コミ' },
+  { id: 'personal', title: 'おすすめの場所' },
+  { id: 'latest', title: '感性が口コミ' },
   { id: 'article', title: '自作記事' },
 ];
 
@@ -342,7 +342,7 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
 }
 
 // サイドメニューコンポーネント
-function SideMenu({ isOpen, onClose, onNavigate, isLoggedIn, onLogout }) {
+function SideMenu({ isOpen, onClose, onNavigate, isLoggedIn, onLogout, isAdmin }) {
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />}
@@ -363,6 +363,20 @@ function SideMenu({ isOpen, onClose, onNavigate, isLoggedIn, onLogout }) {
                 {index < menuItems.length - 1 && <div className="h-px bg-white/30 my-1" />}
               </li>
             ))}
+            {isAdmin && (
+              <>
+                <div className="h-px bg-white/30 my-1" />
+                <li>
+                  <button onClick={() => onNavigate('add-pin')} className="w-full flex items-center gap-4 text-white py-4 px-2 hover:bg-white/10 rounded-lg transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span className="text-base font-medium">ピン追加</span>
+                  </button>
+                </li>
+              </>
+            )}
           </ul>
           {isLoggedIn && (
             <div className="pt-4 border-t border-white/30">
@@ -471,12 +485,38 @@ function App() {
   // ユーザー状態
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  // 管理者判定（email が 'seika' の場合）
+  const isAdmin = useMemo(() => {
+    return isLoggedIn && currentUser && currentUser.email === 'seika';
+  }, [isLoggedIn, currentUser]);
   const [userPreferences, setUserPreferences] = useState({
     spiceTolerance: null,
     cleanliness: null,
     comfort: null,
     crowd: null,
   });
+  
+  // ピン追加フォーム状態
+  const [pinForm, setPinForm] = useState({
+    name: '',
+    shop_type: '',
+    city_id: '',
+    latitude: '',
+    longitude: '',
+    spicy_level: 1,  // デフォルト1（データベース制約: 1-5）
+    clean_level: 1,  // デフォルト1（データベース制約: 1-5）
+    comfortable_level: 1,  // デフォルト1（データベース制約: 1-5）
+    congestion_level: 1,  // デフォルト1（データベース制約: 1-5）
+    avg_rating: 0,  // 平均評価（0-5の範囲、デフォルト0）
+    photo_urls: ['', '', ''],
+    keywords: ['', '', '', ''],
+    source_url: '',
+  });
+  
+  // URLリスト状態
+  const [pendingUrls, setPendingUrls] = useState([]);
+  const [isLoadingUrls, setIsLoadingUrls] = useState(false);
+  const [selectedUrlId, setSelectedUrlId] = useState(null);
   
   // ログインフォーム状態
   const [loginForm, setLoginForm] = useState({
@@ -525,6 +565,7 @@ function App() {
     clean: '',
     comfort: '',
     crowd: '',
+    avg_rating: '',
   });
   const [reviewsByShopId, setReviewsByShopId] = useState(() => {
     try {
@@ -653,7 +694,7 @@ function App() {
 
   const closeDetailPage = () => {
     setIsWriteReviewOpen(false);
-    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '', avg_rating: '' });
     // 詳細を閉じ、下部の詳細カードも閉じる
     setSelectedRestaurant(null);
     setCurrentPage('map');
@@ -685,8 +726,10 @@ function App() {
     const clean = Number(reviewForm.clean);
     const comfort = Number(reviewForm.comfort);
     const crowd = Number(reviewForm.crowd);
+    const avg_rating = reviewForm.avg_rating !== '' ? Number(reviewForm.avg_rating) : null;
     if (!text) return;
     if (![spicy, clean, comfort, crowd].every((n) => Number.isFinite(n) && n >= 1 && n <= 5)) return;
+    if (avg_rating !== null && (!Number.isFinite(avg_rating) || avg_rating < 0 || avg_rating > 5)) return;
 
     const entry = {
       id: `${Date.now()}`,
@@ -694,6 +737,7 @@ function App() {
       text,
       createdAt: new Date().toISOString(),
       ratings: { spicy, clean, comfort, crowd },
+      avg_rating: avg_rating,
     };
 
     setReviewsByShopId((prev) => {
@@ -703,7 +747,7 @@ function App() {
     });
 
     setIsWriteReviewOpen(false);
-    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '' });
+    setReviewForm({ name: '', text: '', spicy: '', clean: '', comfort: '', crowd: '', avg_rating: '' });
   };
 
   // お店検索（フィルターパネルの「検索」から呼ぶ）
@@ -904,6 +948,15 @@ function App() {
     } else if (pageId === 'profile' && !isLoggedIn) {
       setPreviousPage(currentPage);
       setCurrentPage('login');
+    } else if (pageId === 'add-pin') {
+      // ピン追加ページ（管理者のみメニューからアクセス可能）
+      if (isAdmin) {
+        setSelectedUrlId(null); // URLリストに戻る
+        setCurrentPage('add-pin');
+      } else {
+        // 一般ユーザーはアクセス不可
+        alert('この機能は管理者専用です');
+      }
     }
     setIsMenuOpen(false);
   };
@@ -949,6 +1002,31 @@ function App() {
       setSignupError('');
     }
   }, [currentPage]);
+
+  // ピン追加ページで未処理URLリストを取得（管理者がメニューからアクセスした場合のみ）
+  useEffect(() => {
+    if (currentPage === 'add-pin' && isAdmin && !selectedUrlId) {
+      const loadPendingUrls = async () => {
+        setIsLoadingUrls(true);
+        try {
+          const res = await fetch('/shop/pending_urls_json', {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.ok && data.urls) {
+              setPendingUrls(data.urls);
+            }
+          }
+        } catch (error) {
+          console.error('URL一覧取得エラー:', error);
+        } finally {
+          setIsLoadingUrls(false);
+        }
+      };
+      loadPendingUrls();
+    }
+  }, [currentPage, isAdmin, selectedUrlId]);
 
   // ログイン送信
   const handleLoginSubmit = async () => {
@@ -1597,6 +1675,508 @@ function App() {
     );
   }
 
+  // ピン追加ページ（管理者専用、メニューからアクセス）
+  if (currentPage === 'add-pin') {
+    // 管理者チェック
+    if (!isAdmin) {
+      // 管理者でない場合は地図ページに戻る
+      setCurrentPage('map');
+      return null;
+    }
+    
+    // URL選択ハンドラー
+    const handleSelectUrl = (urlData) => {
+      setSelectedUrlId(urlData.id);
+      setPinForm(prev => ({
+        ...prev,
+        source_url: urlData.url,
+      }));
+      // submittedByUserIdをsessionStorageに保存
+      if (urlData.submitted_by_user_id) {
+        sessionStorage.setItem('submittedByUserId', urlData.submitted_by_user_id.toString());
+      }
+    };
+    
+    // URLリストに戻る
+    const handleBackToUrlList = () => {
+      setSelectedUrlId(null);
+      setPinForm({
+        name: '',
+        shop_type: '',
+        city_id: '',
+        latitude: '',
+        longitude: '',
+        spicy_level: 1,  // デフォルト1（データベース制約: 1-5）
+        clean_level: 1,  // デフォルト1（データベース制約: 1-5）
+        comfortable_level: 1,  // デフォルト1（データベース制約: 1-5）
+        congestion_level: 1,  // デフォルト1（データベース制約: 1-5）
+        avg_rating: 0,  // 平均評価（0-5の範囲、デフォルト0）
+        photo_urls: ['', '', ''],
+        keywords: ['', '', '', ''],
+        source_url: '',
+      });
+      sessionStorage.removeItem('submittedByUserId');
+    };
+    
+    const handleSubmitPin = async () => {
+      // ログインチェック
+      if (!isLoggedIn) {
+        alert('ログインが必要です');
+        setPreviousPage('add-pin');
+        setCurrentPage('login');
+        return;
+      }
+
+      // バリデーション
+      if (!pinForm.name || !pinForm.shop_type || !pinForm.latitude || !pinForm.longitude) {
+        alert('必須項目（店舗名、店舗タイプ、緯度、経度）を入力してください');
+        return;
+      }
+
+      try {
+        // 写真URLを結合（空でないもののみ、最大3つ）
+        const photoUrls = pinForm.photo_urls.filter(url => url.trim()).slice(0, 3);
+        const photoUrl = photoUrls.join(',');
+
+        // キーワードを結合（空でないもののみ、最大4つ）
+        const keywords = pinForm.keywords.filter(kw => kw.trim()).slice(0, 4);
+
+        // 送信ユーザーIDを取得（URLを送信したユーザー、なければ現在のユーザー）
+        const submittedByUserId = sessionStorage.getItem('submittedByUserId') || (currentUser ? currentUser.id : null);
+
+        // データを送信
+        const res = await fetch('/shop/add_shop_json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            name: pinForm.name,
+            shop_type: pinForm.shop_type,
+            city_id: pinForm.city_id || 'hyderabad',  // デフォルトはhyderabad
+            latitude: parseFloat(pinForm.latitude),
+            longitude: parseFloat(pinForm.longitude),
+            spicy_level: pinForm.spicy_level || 1,  // デフォルト1（データベース制約: 1-5）
+            clean_level: pinForm.clean_level || 1,  // デフォルト1（データベース制約: 1-5）
+            comfortable_level: pinForm.comfortable_level || 1,  // デフォルト1（データベース制約: 1-5）
+            congestion_level: pinForm.congestion_level || 1,  // デフォルト1（データベース制約: 1-5）
+            avg_rating: pinForm.avg_rating || 0,  // 平均評価（0-5の範囲、デフォルト0）
+            photo_url: photoUrl,
+            keywords: keywords,
+            source_url: pinForm.source_url || '',
+            submitted_by_user_id: submittedByUserId ? parseInt(submittedByUserId) : null,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || '店舗の追加に失敗しました');
+        }
+
+        // 成功メッセージ
+        alert('店舗を追加しました！お気に入りにも追加されました。');
+
+        // URLを削除（店舗追加成功後）
+        if (selectedUrlId) {
+          try {
+            const deleteRes = await fetch('/shop/delete_url_json', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ url_id: selectedUrlId }),
+            });
+            if (!deleteRes.ok) {
+              console.error('URL削除エラー');
+            }
+          } catch (err) {
+            console.error('URL削除エラー:', err);
+          }
+        }
+
+        // sessionStorageをクリア
+        sessionStorage.removeItem('submittedByUserId');
+
+        // フォームをリセット
+        setPinForm({
+          name: '',
+          shop_type: '',
+          city_id: '',
+          latitude: '',
+          longitude: '',
+          spicy_level: 1,  // デフォルト1（データベース制約: 1-5）
+          clean_level: 1,  // デフォルト1（データベース制約: 1-5）
+          comfortable_level: 1,  // デフォルト1（データベース制約: 1-5）
+          congestion_level: 1,  // デフォルト1（データベース制約: 1-5）
+          avg_rating: 0,  // 平均評価（0-5の範囲、デフォルト0）
+          photo_urls: ['', '', ''],
+          keywords: ['', '', '', ''],
+          source_url: '',
+        });
+        
+        // URLリストに戻り、リストを再読み込み
+        setSelectedUrlId(null);
+        
+        // URLリストを再取得（削除されたURLがリストから消える）
+        try {
+          const urlRes = await fetch('/shop/pending_urls_json', {
+            credentials: 'include',
+          });
+          if (urlRes.ok) {
+            const urlData = await urlRes.json();
+            if (urlData.ok && urlData.urls) {
+              setPendingUrls(urlData.urls);
+            }
+          }
+        } catch (error) {
+          console.error('URL一覧再取得エラー:', error);
+        }
+        
+        // 店舗データを再取得して地図に表示
+        const restaurantRes = await fetch(`${API_BASE_URL}/api/restaurants`);
+        if (restaurantRes.ok) {
+          const restaurantData = await restaurantRes.json();
+          const toNumberOrNull = (v) => {
+            if (v === null || v === undefined || v === '') return null;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+          };
+          const restaurantsWithPosition = restaurantData.map(restaurant => {
+            const keywords = (restaurant.keywords && Array.isArray(restaurant.keywords)) ? restaurant.keywords : [];
+            const latitude = toNumberOrNull(restaurant.latitude);
+            const longitude = toNumberOrNull(restaurant.longitude);
+            const avgRating = toNumberOrNull(restaurant.avg_rating);
+            return {
+              ...restaurant,
+              spicy_level: toNumberOrNull(restaurant.spicy_level),
+              clean_level: toNumberOrNull(restaurant.clean_level),
+              comfortable_level: toNumberOrNull(restaurant.comfortable_level),
+              congestion_level: toNumberOrNull(restaurant.congestion_level),
+              avg_rating: avgRating,
+              latitude,
+              longitude,
+              position: restaurant.latitude && restaurant.longitude 
+                ? { lat: latitude ?? getCityCoordinates(restaurant.city_id).lat, lng: longitude ?? getCityCoordinates(restaurant.city_id).lng }
+                : getCityCoordinates(restaurant.city_id),
+              keywords: keywords,
+            };
+          });
+          setRestaurants(restaurantsWithPosition);
+        }
+
+        // キーワードリストを再取得（新しく追加されたキーワードを含む）
+        const keywordRes = await fetch(`${API_BASE_URL}/api/keywords`);
+        if (keywordRes.ok) {
+          const keywordRows = await keywordRes.json();
+          const words = (Array.isArray(keywordRows) ? keywordRows : [])
+            .map((r) => r?.word)
+            .filter((w) => typeof w === 'string' && w.trim())
+            .map((w) => w.trim());
+          setDbKeywords(words);
+        }
+
+        // お気に入りリストを更新
+        if (isLoggedIn) {
+          const favRes = await fetch('/auth/favorites_json', {
+            credentials: 'include',
+          });
+          if (favRes.ok) {
+            const favData = await favRes.json();
+            if (favData.ok && favData.favorites) {
+              const ids = new Set(favData.favorites.map((s) => s.id));
+              setFavoriteShopIds(ids);
+              setFavoriteShops(favData.favorites);
+            }
+          }
+        }
+
+      } catch (error) {
+        console.error('ピン追加エラー:', error);
+        alert(`エラーが発生しました: ${error.message}`);
+      }
+    };
+
+    // URLリスト表示
+    if (!selectedUrlId) {
+      return (
+        <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+          <div className="mx-auto max-w-md w-full">
+            <div className="flex items-center px-6 py-4 border-b border-gray-200">
+              <button onClick={() => { setSelectedUrlId(null); setCurrentPage(previousPage); }} className="p-2" aria-label="戻る">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <h1 className="flex-1 text-center text-lg font-semibold text-slate-900">ピン追加</h1>
+              <div className="w-10"></div>
+            </div>
+
+            <div className="px-6 py-8 space-y-4 hide-scrollbar overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">送信されたURL一覧</h2>
+              
+              {isLoadingUrls ? (
+                <div className="flex items-center justify-center py-12">
+                  <p className="text-slate-500">読み込み中...</p>
+                </div>
+              ) : pendingUrls.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <p className="text-slate-500">未処理のURLはありません</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingUrls.map((urlData) => (
+                    <div
+                      key={urlData.id}
+                      onClick={() => handleSelectUrl(urlData)}
+                      className="bg-violet-50 rounded-xl p-4 cursor-pointer hover:bg-violet-100 transition-colors border border-violet-200"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-700 mb-1 break-all">{urlData.url}</p>
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            {urlData.submitted_by_name && (
+                              <span>送信者: {urlData.submitted_by_name}</span>
+                            )}
+                            <span>•</span>
+                            <span>{new Date(urlData.created_at).toLocaleString('ja-JP')}</span>
+                          </div>
+                        </div>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-violet-500 flex-shrink-0">
+                          <path d="M9 18l6-6-6-6"/>
+                        </svg>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      );
+    }
+
+    // ピン追加フォーム表示
+    return (
+      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md w-full">
+          <div className="flex items-center px-6 py-4 border-b border-gray-200">
+            <button onClick={handleBackToUrlList} className="p-2" aria-label="戻る">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            <h1 className="flex-1 text-center text-lg font-semibold text-slate-900">ピン追加</h1>
+            <div className="w-10"></div>
+          </div>
+
+          <div className="px-6 py-8 space-y-6 hide-scrollbar overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+            {/* URL快速跳转 */}
+            {pinForm.source_url && (
+              <div className="bg-violet-50 rounded-xl p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-700">送信されたURL</p>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="url" 
+                    value={pinForm.source_url} 
+                    readOnly
+                    className="flex-1 px-3 py-2 rounded-lg bg-white border border-violet-200 text-sm text-slate-600"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (pinForm.source_url) {
+                        window.open(pinForm.source_url, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
+                    className="px-4 py-2 bg-violet-500 text-white rounded-lg text-sm font-semibold hover:bg-violet-600 transition-colors"
+                  >
+                    開く
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">店舗名 *</label>
+                <input 
+                  type="text" 
+                  value={pinForm.name}
+                  onChange={(e) => setPinForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+                  placeholder="店舗名を入力"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">店舗タイプ *</label>
+                <select 
+                  value={pinForm.shop_type}
+                  onChange={(e) => setPinForm(prev => ({ ...prev, shop_type: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300"
+                >
+                  <option value="">選択してください</option>
+                  <option value="restaurant">飲食店</option>
+                  <option value="hotel">ホテル</option>
+                  <option value="spot">スポット</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">緯度 (X) *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    value={pinForm.latitude}
+                    onChange={(e) => setPinForm(prev => ({ ...prev, latitude: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+                    placeholder="例: 17.385044"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">経度 (Y) *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    value={pinForm.longitude}
+                    onChange={(e) => setPinForm(prev => ({ ...prev, longitude: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300" 
+                    placeholder="例: 78.486671"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">平均評価（0-5の範囲）</label>
+                <div className="flex items-center gap-3 mb-4">
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="5" 
+                    step="0.1"
+                    value={pinForm.avg_rating}
+                    onChange={(e) => setPinForm(prev => ({ ...prev, avg_rating: parseFloat(e.target.value) }))}
+                    className="flex-1 h-2 bg-violet-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-lg font-bold text-violet-600 w-12 text-center">{Number(pinForm.avg_rating).toFixed(1)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-3">評価レベル（1-5の範囲）</label>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">辛さレベル</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="5" 
+                        step="1"
+                        value={pinForm.spicy_level}
+                        onChange={(e) => setPinForm(prev => ({ ...prev, spicy_level: parseInt(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <span className="text-lg font-bold text-violet-700 w-8 text-center">{pinForm.spicy_level}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">清潔度</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="5" 
+                        step="1"
+                        value={pinForm.clean_level}
+                        onChange={(e) => setPinForm(prev => ({ ...prev, clean_level: parseInt(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <span className="text-lg font-bold text-violet-700 w-8 text-center">{pinForm.clean_level}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">快適度</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="5" 
+                        step="1"
+                        value={pinForm.comfortable_level}
+                        onChange={(e) => setPinForm(prev => ({ ...prev, comfortable_level: parseInt(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <span className="text-lg font-bold text-violet-700 w-8 text-center">{pinForm.comfortable_level}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">混雑度</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="5" 
+                        step="1"
+                        value={pinForm.congestion_level}
+                        onChange={(e) => setPinForm(prev => ({ ...prev, congestion_level: parseInt(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <span className="text-lg font-bold text-violet-600 w-8 text-center">{pinForm.congestion_level}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">写真URL（最大3枚）</label>
+                {[0, 1, 2].map((idx) => (
+                  <input
+                    key={idx}
+                    type="url"
+                    value={pinForm.photo_urls[idx] || ''}
+                    onChange={(e) => {
+                      const newUrls = [...pinForm.photo_urls];
+                      newUrls[idx] = e.target.value;
+                      setPinForm(prev => ({ ...prev, photo_urls: newUrls }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300 mb-2 ${idx === 0 ? '' : 'mt-2'}`}
+                    placeholder={`写真URL ${idx + 1}（オプション）`}
+                  />
+                ))}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">キーワード（最大4つ）</label>
+                {[0, 1, 2, 3].map((idx) => (
+                  <input
+                    key={idx}
+                    type="text"
+                    value={pinForm.keywords[idx] || ''}
+                    onChange={(e) => {
+                      const newKeywords = [...pinForm.keywords];
+                      newKeywords[idx] = e.target.value;
+                      setPinForm(prev => ({ ...prev, keywords: newKeywords }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300 mb-2 ${idx === 0 ? '' : 'mt-2'}`}
+                    placeholder={`キーワード ${idx + 1}（オプション）`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <button 
+              className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors"
+              onClick={handleSubmitPin}
+            >
+              ピンを追加
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   // マップページ（検索結果オーバーレイもここで表示）
   if (currentPage === 'map' || currentPage === 'detail') {
     return (
@@ -1746,7 +2326,7 @@ function App() {
 
           {!isDetailOpen && !isSearchOpen && (
             <>
-              <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} />
+              <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} isAdmin={isAdmin} />
           <FilterPanel
             isOpen={isFilterOpen}
             onClose={handleCloseFilter}
@@ -2142,20 +2722,17 @@ function App() {
           {/* 詳細オーバーレイ（背景は地図のまま） */}
           {isDetailOpen && selectedRestaurant && (
             <div className="fixed inset-0 z-50 pointer-events-none w-full overflow-x-hidden">
-              {/* 固定位置的关闭按钮 - 始终在视口右上角 */}
-              <button
-                onClick={closeDetailPage}
-                className="fixed top-24 z-[60] bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors pointer-events-auto"
-                aria-label="閉じる"
-                style={{ 
-                  right: 'max(1rem, calc((100vw - min(100vw, 448px)) / 2 + 1rem))'
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
               <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-md max-h-[90vh] bg-white rounded-t-3xl shadow-2xl overflow-y-auto hide-scrollbar pointer-events-auto" style={{ maxHeight: '90dvh' }}>
+                {/* 固定位置的关闭按钮 - 始终在详情页右上方 */}
+                <button
+                  onClick={closeDetailPage}
+                  className="absolute top-4 right-4 z-[60] bg-black/60 rounded-full p-2 text-white hover:bg-black/80 transition-colors pointer-events-auto"
+                  aria-label="閉じる"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
                 {/* 画像 */}
                 <div className="relative h-56 w-full overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-100 to-purple-200">
 
@@ -2340,6 +2917,9 @@ function App() {
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">清潔度 {r.ratings.clean}</span>
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100">快適度 {r.ratings.comfort}</span>
                                   <span className="text-[11px] px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-100">混雑度 {r.ratings.crowd}</span>
+                                  {r.avg_rating !== null && r.avg_rating !== undefined && (
+                                    <span className="text-[11px] px-2 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-100">総合評価 {r.avg_rating}</span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2403,6 +2983,23 @@ function App() {
                           ))}
                         </div>
 
+                        <div className="mt-3">
+                          <div className="relative w-full">
+                            <select
+                              value={reviewForm.avg_rating}
+                              onChange={(e) => setReviewForm((p) => ({ ...p, avg_rating: e.target.value }))}
+                              className="w-full appearance-none bg-white/95 text-violet-700 text-[11px] font-semibold px-1.5 py-2 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-white/60 text-center [text-align-last:center]"
+                            >
+                              <option value="">総合評価▼</option>
+                              {[0, 1, 2, 3, 4, 5].map((n) => (
+                                <option key={n} value={n}>
+                                  総合評価 {n}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
                         <div className="mt-5 flex justify-center">
                           <button
                             onClick={submitReview}
@@ -2449,10 +3046,33 @@ function App() {
                       <p className="text-sm text-slate-700 leading-relaxed">気になるレストラン・ホテル・スポットを見つけてワクワクする詳細ページのURLを管理者さんにポイっと送ってくださいね!</p>
                       <input type="url" value={restaurantUrl} onChange={(e) => setRestaurantUrl(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-violet-500 focus:outline-none transition-colors" />
                       <button 
-                        onClick={() => { 
-                          alert('URL送信完了！'); 
-                          setRestaurantUrl(''); 
-                          setIsUrlSubmitOpen(false); 
+                        onClick={async () => { 
+                          if (!restaurantUrl || !restaurantUrl.trim()) {
+                            alert('URLを入力してください');
+                            return;
+                          }
+                          
+                          try {
+                            // URLを送信
+                            const res = await fetch('/shop/submit_url_json', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
+                              body: JSON.stringify({ url: restaurantUrl }),
+                            });
+                            
+                            const data = await res.json();
+                            if (res.ok && data.ok) {
+                              alert('URL送信完了！管理者に送信されました。');
+                              setRestaurantUrl('');
+                              setIsUrlSubmitOpen(false);
+                            } else {
+                              alert('URL送信に失敗しました。もう一度お試しください。');
+                            }
+                          } catch (error) {
+                            console.error('URL送信エラー:', error);
+                            alert('URL送信に失敗しました。もう一度お試しください。');
+                          }
                         }} 
                         className="w-full bg-violet-500 text-white font-semibold py-3 rounded-full shadow-lg hover:bg-violet-600 transition-colors flex items-center justify-center gap-2"
                       >
@@ -2570,7 +3190,7 @@ function App() {
           </div>
         </div>
 
-        <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} />
+        <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={handleMenuNavigate} isLoggedIn={isLoggedIn} onLogout={handleLogout} isAdmin={isAdmin} />
         <FilterPanel
           isOpen={isFilterOpen}
           onClose={handleCloseFilter}

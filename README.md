@@ -153,6 +153,13 @@ npm run preview
 - `GET /auth/favorites_json` - お気に入り一覧取得
 - `POST /auth/favorites_json` - お気に入り追加
 - `DELETE /auth/favorites_json` - お気に入り削除
+- `GET /auth/favorites_check_json` - お気に入り状態確認
+
+#### 店舗追加API（`/shop` プレフィックス）
+- `POST /shop/submit_url_json` - URL送信（全ユーザー）
+- `GET /shop/pending_urls_json` - 送信URL一覧取得（管理者専用）
+- `POST /shop/delete_url_json` - URL削除（管理者専用）
+- `POST /shop/add_shop_json` - 店舗追加（ログイン必須）
 
 ## 🔑 API設定
 
@@ -248,9 +255,17 @@ const { isLoaded } = useJsApiLoader({
   - 店舗をクリックして詳細を表示・地図で位置確認
   - お気に入りから削除も可能
 
-### 6. スポット追加機能
-- TripAdvisor からのURL共有
-- 管理者への推薦送信
+### 6. URL送信・ピン追加機能
+- **URL送信**
+  - 地図ページ右下角の「+」ボタンからURLを送信
+  - 送信されたURLは管理者が確認できる
+  - 送信成功後、成功メッセージを表示
+- **ピン追加（管理者専用）**
+  - 管理者ログイン後、右上角メニューに「ピン追加」オプションが表示
+  - URL一覧から選択して店舗情報を入力
+  - 店舗名、タイプ、座標、評価レベル、写真URL、キーワードを入力
+  - 追加成功後、URL送信者のお気に入りに自動追加
+  - 新規キーワードは自動的にキーワードデータベースに同期
 
 ## 📁 プロジェクト構造
 
@@ -267,11 +282,16 @@ sinkyuuten/
 │   └── test_restaurants_data.sql # テストデータ
 ├── app.py                   # Flask サーバー（検索API + 認証API）
 ├── login.py                 # Flask 認証ブループリント（ログイン・登録・お気に入り）
+├── add_shop.py              # 店舗追加ブループリント（URL送信・ピン追加）
+├── recommend.py             # レコメンド機能ブループリント
 ├── db.py                    # データベース接続
 ├── models.py                # データモデル
 ├── server.js                # Node.js Express サーバー
+├── create_admin.py          # 管理者アカウント作成スクリプト
+├── create_submitted_urls_table.py  # URL送信テーブル作成スクリプト
 ├── src/
-│   └── create_favorites_table.sql  # お気に入りテーブル作成SQL
+│   ├── create_favorites_table.sql  # お気に入りテーブル作成SQL
+│   └── create_submitted_urls_table.sql  # URL送信テーブル作成SQL
 ├── dist/                    # ビルド出力
 ├── package.json             # Node.js 依存関係
 ├── vite.config.js          # Vite設定
@@ -296,17 +316,38 @@ sinkyuuten/
 - **シャドウ**: 多層シャドウ効果
 - **アニメーション**: スムーズなトランジション
 
-## 📱 ローカルネットワークアクセス
+## 📱 モバイルデプロイ
 
 モバイルデバイスからアクセスする場合：
 
-```bash
-# 同じWi-Fiネットワークに接続
-# ブラウザで以下のアドレスにアクセス
-http://[YOUR_COMPUTER_IP]:5173
-```
+1. **すべてのサービスを起動**
+   ```bash
+   # ターミナル1: Node.js サーバー
+   npm run server
+   
+   # ターミナル2: Flask サーバー
+   python3 app.py
+   
+   # ターミナル3: Vite 開発サーバー
+   npm run dev
+   ```
 
-開発サーバーは自動的にネットワークアクセスを許可します（`vite.config.js` の `host: true` 設定）。
+2. **本機IPアドレスを確認**
+   ```bash
+   # macOS/Linux
+   ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1
+   
+   # Windows
+   ipconfig
+   ```
+
+3. **モバイルブラウザでアクセス**
+   - 同じWi-Fiネットワークに接続
+   - `http://[YOUR_IP]:5173` にアクセス
+
+詳細は `MOBILE_DEPLOY.md` を参照してください。
+
+**注意**: すべてのサーバーは `host: '0.0.0.0'` で設定されており、LANアクセスが可能です。
 
 ## 🐛 トラブルシューティング
 
@@ -340,12 +381,27 @@ ISC
 - Flask セッション管理による認証
 - ログイン状態の自動チェック
 - ログイン後、左上角にユーザー名を表示
+- 管理者アカウント機能（email: `seika`）
 
 ### お気に入り機能の実装
 - 店舗をお気に入りに追加/削除する機能
 - お気に入り一覧ページの実装
 - データベースに `user_favorites` テーブルを追加
 - 検索結果画面、詳細ページ、お気に入り一覧から操作可能
+- ピン追加時に自動的にお気に入りに追加（URL送信者）
+
+### URL送信・ピン追加機能
+- **URL送信機能**
+  - すべてのユーザーが地図ページからURLを送信可能
+  - 送信されたURLはデータベースに保存（`submitted_urls`テーブル）
+  - 送信成功後、成功メッセージを表示
+- **管理者ピン追加機能**
+  - 管理者のみアクセス可能な「ピン追加」メニュー
+  - URL一覧表示（時間順、最新が上）
+  - URL選択後、店舗情報入力フォームを表示
+  - 店舗追加成功後、対応するURLを自動削除
+  - 追加した店舗はURL送信者のお気に入りに自動追加
+  - 新規キーワードは自動的にキーワードデータベースに同期
 
 ### UI/UX の改善
 - 店舗詳細ページ（90vh）の実装
@@ -355,7 +411,21 @@ ISC
 - スクロールバーを非表示に（機能は維持）
 - 最大幅を固定（デスクトップでも448pxに制限）
 - ログイン後、ロックボタンを非表示（タイトルは表示）
+- ピン追加ページの評価入力にスライダーUIを採用
+- スライダーの視認性向上（柔らかい色調、適切なサイズ）
 
 ### データベース
 - `user_favorites` テーブルの追加
+- `submitted_urls` テーブルの追加（URL送信管理）
 - ユーザー認証用の `users` テーブル拡張
+- `shops` テーブルに `submitted_by_user_id` カラム追加
+
+### モバイル対応・デプロイ
+- すべてのサーバーをLANアクセス可能に設定（`host: '0.0.0.0'`）
+- モバイルデバイスからのアクセス対応
+- 詳細なモバイルデプロイガイド（`MOBILE_DEPLOY.md`）を追加
+
+### コード最適化
+- すべてのコメントを日本語に統一
+- 不要なコードの削除と簡素化
+- エラーハンドリングの改善
