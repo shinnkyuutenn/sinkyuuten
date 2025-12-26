@@ -5,6 +5,8 @@ import db
 from login import auth_bp
 from recommend import recommend_bp
 from add_shop import add_shop_bp
+from review import auth_review
+import psycopg2.extras
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -14,6 +16,7 @@ app.secret_key = "your-secret-key"
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(recommend_bp, url_prefix="/recommend")
 app.register_blueprint(add_shop_bp, url_prefix="/shop")
+app.register_blueprint(auth_review)
 
 
 def to_int_or_none(value):
@@ -53,6 +56,55 @@ def search_shops_json():
 
     return jsonify(shops)
 
+
+@app.route("/api/restaurants", methods=["GET"])
+def get_restaurants():
+    """全レストランデータ取得API（キーワード含む）"""
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT 
+                s.id, s.name, s.shop_type, s.spicy_level, s.clean_level, 
+                s.comfortable_level, s.congestion_level,
+                (s.avg_rating)::float8 as avg_rating,
+                s.photo_url, s.city_id,
+                (s.latitude)::float8 as latitude,
+                (s.longitude)::float8 as longitude,
+                COALESCE(
+                    json_agg(DISTINCT k.word) FILTER (WHERE k.word IS NOT NULL),
+                    '[]'::json
+                ) as keywords
+            FROM public.shops s
+            LEFT JOIN public.shop_keywords sk ON s.id = sk.shop_id
+            LEFT JOIN public.keywords k ON sk.keyword_id = k.id
+            GROUP BY s.id, s.name, s.shop_type, s.spicy_level, s.clean_level, 
+                     s.comfortable_level, s.congestion_level, s.avg_rating, 
+                     s.photo_url, s.city_id, s.latitude, s.longitude
+            ORDER BY s.id
+        """)
+        restaurants = cur.fetchall()
+        return jsonify([dict(r) for r in restaurants])
+    except Exception as e:
+        print(f"レストランデータ取得エラー: {e}")
+        return jsonify({"error": "レストランデータ取得失敗"}), 500
+    finally:
+        conn.close()
+
+@app.route("/api/keywords", methods=["GET"])
+def get_keywords():
+    """全キーワード取得API"""
+    conn = db.get_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT id, word FROM public.keywords ORDER BY word")
+        keywords = cur.fetchall()
+        return jsonify([dict(k) for k in keywords])
+    except Exception as e:
+        print(f"キーワード取得エラー: {e}")
+        return jsonify({"error": "キーワード取得失敗"}), 500
+    finally:
+        conn.close()
 
 @app.route("/")
 def health():

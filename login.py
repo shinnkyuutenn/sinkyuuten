@@ -27,66 +27,131 @@ def hash_password(password, salt=None, iterations=310000):
 
 
 def check_password(password, stored_hash):
-    algo, iterations, salt, hashed = stored_hash.split("$")
-    iterations = int(iterations)
+    if not stored_hash:
+        return False
+    try:
+        parts = stored_hash.split("$")
+        if len(parts) != 4:
+            return False
+        algo, iterations, salt, hashed = parts
+        iterations = int(iterations)
 
-    pw_hash = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt.encode("utf-8"),
-        iterations
-    )
+        pw_hash = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            iterations
+        )
 
-    b64_hash = base64.b64encode(pw_hash).decode("ascii").strip()
-    return b64_hash == hashed
+        b64_hash = base64.b64encode(pw_hash).decode("ascii").strip()
+        return b64_hash == hashed
+    except (ValueError, AttributeError, IndexError) as e:
+        print(f"パスワード検証エラー: {e}, stored_hash: {stored_hash}")
+        return False
 
 
 
 @auth_bp.route("/login_json", methods=["POST"])
 def login_json():
     """ログインAPI"""
-    email = request.form.get("email")
-    password = request.form.get("password")
+    db = None
+    try:
+        email = request.form.get("email")
+        password = request.form.get("password")
 
-    if not email or not password:
-        return jsonify({
-            "ok": False,
-            "error": "email または password が未入力です"
-        }), 400
+        if not email or not password:
+            return jsonify({
+                "ok": False,
+                "error": "email または password が未入力です"
+            }), 400
 
-    db = get_connection()
-    with db:
+        db = get_connection()
+        if not db:
+            return jsonify({
+                "ok": False,
+                "error": "データベース接続に失敗しました"
+            }), 500
+
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
-            "SELECT * FROM users WHERE email = %s",
+            "SELECT id, name, email, password_hash, avatar, spicy_level, clean_level, comfortable_level, congestion_level FROM users WHERE email = %s",
             (email,)
         )
         user = cur.fetchone()
 
-    if user is None:
+        if user is None:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
+            return jsonify({
+                "ok": False,
+                "error": "メールアドレスが違います"
+            }), 401
+
+        password_hash = user.get("password_hash") if user else None
+        if not password_hash:
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
+            return jsonify({
+                "ok": False,
+                "error": "パスワードハッシュが見つかりません"
+            }), 500
+
+        if not check_password(password, password_hash):
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
+            return jsonify({
+                "ok": False,
+                "error": "パスワードが違います"
+            }), 401
+
+        # ログイン成功
+        session["user_id"] = user["id"]
+        session["user_name"] = user["name"]
+
+        result = jsonify({
+            "ok": True,
+            "user": {
+                "id": user["id"],
+                "name": user["name"],
+                "email": user["email"],
+                "avatar": user.get("avatar"),
+                "spicy_level": user.get("spicy_level"),
+                "clean_level": user.get("clean_level"),
+                "comfortable_level": user.get("comfortable_level"),
+                "congestion_level": user.get("congestion_level")
+            }
+        })
+        
+        if db:
+            try:
+                db.close()
+            except:
+                pass
+        
+        return result
+    except Exception as e:
+        print(f"ログインエラー: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "ok": False,
-            "error": "メールアドレスが違います"
-        }), 401
-
-    if not check_password(password, user["password_hash"]):
-        return jsonify({
-            "ok": False,
-            "error": "パスワードが違います"
-        }), 401
-
-    # ログイン成功
-    session["user_id"] = user["id"]
-    session["user_name"] = user["name"]
-
-    return jsonify({
-        "ok": True,
-        "user": {
-            "id": user["id"],
-            "name": user["name"],
-            "email": user["email"]
-        }
-    })
+            "error": f"ログイン処理中にエラーが発生しました: {str(e)}"
+        }), 500
+    finally:
+        if db:
+            try:
+                db.close()
+            except:
+                pass
 
 
 @auth_bp.route("/register_json", methods=["POST"])
@@ -176,7 +241,7 @@ def me_json():
         with db:
             cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
             cur.execute(
-                "SELECT id, name, email FROM public.users WHERE id = %s",
+                "SELECT id, name, email, avatar, spicy_level, clean_level, comfortable_level, congestion_level FROM public.users WHERE id = %s",
                 (session["user_id"],)
             )
             user = cur.fetchone()
@@ -193,7 +258,12 @@ def me_json():
                 "user": {
                     "id": user["id"],
                     "name": user["name"],
-                    "email": user["email"]
+                    "email": user["email"],
+                    "avatar": user["avatar"],
+                    "spicy_level": user["spicy_level"],
+                    "clean_level": user["clean_level"],
+                    "comfortable_level": user["comfortable_level"],
+                    "congestion_level": user["congestion_level"]
                 }
             })
     except Exception as e:
@@ -368,3 +438,120 @@ def check_favorite_json():
         "ok": True,
         "favorites": favorite_ids
     })
+
+
+@auth_bp.route("/update_profile_json", methods=["POST"])
+def update_profile_json():
+    """ユーザープロフィール更新API（アバターと個人設定）"""
+    if "user_id" not in session:
+        return jsonify({"ok": False, "error": "ログインが必要です"}), 401
+    
+    user_id = session["user_id"]
+    data = request.json
+    
+    avatar = data.get("avatar")
+    spicy_level = data.get("spicy_level")
+    clean_level = data.get("clean_level")
+    comfortable_level = data.get("comfortable_level")
+    congestion_level = data.get("congestion_level")
+    
+    # バリデーション
+    if avatar and avatar not in [f"user_icon_{i}.png" for i in range(1, 11)]:
+        return jsonify({"ok": False, "error": "無効なアバターです"}), 400
+    
+    if spicy_level is not None:
+        try:
+            spicy_level = int(spicy_level)
+            if not (1 <= spicy_level <= 5):
+                return jsonify({"ok": False, "error": "辛さレベルは1-5の範囲で入力してください"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "辛さレベルは数値で入力してください"}), 400
+    
+    if clean_level is not None:
+        try:
+            clean_level = int(clean_level)
+            if not (1 <= clean_level <= 5):
+                return jsonify({"ok": False, "error": "清潔度レベルは1-5の範囲で入力してください"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "清潔度レベルは数値で入力してください"}), 400
+    
+    if comfortable_level is not None:
+        try:
+            comfortable_level = int(comfortable_level)
+            if not (1 <= comfortable_level <= 5):
+                return jsonify({"ok": False, "error": "快適度レベルは1-5の範囲で入力してください"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "快適度レベルは数値で入力してください"}), 400
+    
+    if congestion_level is not None:
+        try:
+            congestion_level = int(congestion_level)
+            if not (1 <= congestion_level <= 5):
+                return jsonify({"ok": False, "error": "混雑度レベルは1-5の範囲で入力してください"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "混雑度レベルは数値で入力してください"}), 400
+    
+    # 更新するフィールドを構築
+    updates = []
+    params = []
+    
+    if avatar is not None:
+        updates.append("avatar = %s")
+        params.append(avatar)
+    
+    if spicy_level is not None:
+        updates.append("spicy_level = %s")
+        params.append(spicy_level)
+    
+    if clean_level is not None:
+        updates.append("clean_level = %s")
+        params.append(clean_level)
+    
+    if comfortable_level is not None:
+        updates.append("comfortable_level = %s")
+        params.append(comfortable_level)
+    
+    if congestion_level is not None:
+        updates.append("congestion_level = %s")
+        params.append(congestion_level)
+    
+    if not updates:
+        return jsonify({"ok": False, "error": "更新する項目がありません"}), 400
+    
+    params.append(user_id)
+    
+    db = get_connection()
+    try:
+        with db:
+            cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            query = f"UPDATE public.users SET {', '.join(updates)} WHERE id = %s RETURNING id, name, email, avatar, spicy_level, clean_level, comfortable_level, congestion_level"
+            cur.execute(query, params)
+            user = cur.fetchone()
+            db.commit()
+            
+            if not user:
+                return jsonify({"ok": False, "error": "ユーザーが見つかりません"}), 404
+            
+            return jsonify({
+                "ok": True,
+                "message": "プロフィールを更新しました",
+                "user": {
+                    "id": user["id"],
+                    "name": user["name"],
+                    "email": user["email"],
+                    "avatar": user["avatar"],
+                    "spicy_level": user["spicy_level"],
+                    "clean_level": user["clean_level"],
+                    "comfortable_level": user["comfortable_level"],
+                    "congestion_level": user["congestion_level"]
+                }
+            })
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        traceback.print_exc()
+        print(f"プロフィール更新エラー: {error_msg}")
+        return jsonify({"ok": False, "error": f"プロフィールの更新に失敗しました: {error_msg}"}), 500
+    finally:
+        if db:
+            db.close()

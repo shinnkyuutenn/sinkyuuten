@@ -179,31 +179,14 @@ def add_shop_json():
     latitude = float(data.get("latitude", 0))
     longitude = float(data.get("longitude", 0))
     
-    # 評価レベル（デフォルト1、範囲1-5）
-    # データベースの制約により、1-5の範囲内である必要がある
-    def clamp_rating(value, default=1):
-        """評価値を1-5の範囲にクランプ"""
-        try:
-            val = int(value) if value not in (None, "", 0) else default
-            return max(1, min(5, val))  # 1-5の範囲に制限
-        except (ValueError, TypeError):
-            return default
+    # 評価レベル（NULL - ユーザーレビューから計算される）
+    spicy_level = data.get("spicy_level") if data.get("spicy_level") is not None else None
+    clean_level = data.get("clean_level") if data.get("clean_level") is not None else None
+    comfortable_level = data.get("comfortable_level") if data.get("comfortable_level") is not None else None
+    congestion_level = data.get("congestion_level") if data.get("congestion_level") is not None else None
     
-    spicy_level = clamp_rating(data.get("spicy_level"), default=1)
-    clean_level = clamp_rating(data.get("clean_level"), default=1)
-    comfortable_level = clamp_rating(data.get("comfortable_level"), default=1)
-    congestion_level = clamp_rating(data.get("congestion_level"), default=1)
-    
-    # 平均評価（デフォルト0、範囲0-5）
-    def clamp_avg_rating(value, default=0):
-        """平均評価を0-5の範囲にクランプ"""
-        try:
-            val = float(value) if value not in (None, "") else default
-            return max(0.0, min(5.0, val))  # 0-5の範囲に制限
-        except (ValueError, TypeError):
-            return default
-    
-    avg_rating = clamp_avg_rating(data.get("avg_rating"), default=0)
+    # 平均評価（NULL - ユーザーレビューから計算される）
+    avg_rating = data.get("avg_rating") if data.get("avg_rating") is not None else None
     
     # 写真URL（カンマ区切り、最大3つ）
     photo_url = data.get("photo_url", "").strip()
