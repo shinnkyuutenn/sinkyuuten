@@ -55,4 +55,7 @@ coverage/
 
 # Cursor / その他
 .cursor/
-.env
+
+# デプロイ関連ドキュメント（オプション）
+__pycache__/
+*.pyc
