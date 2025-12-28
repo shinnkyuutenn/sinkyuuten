@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session
 from db import get_connection
+
 import psycopg2.extras
 
 auth_review = Blueprint("auth_review", __name__)
@@ -100,6 +101,11 @@ def get_reviews_json():
     finally:
         db.close()
 
+
+
+auth_review = Blueprint("auth_review", __name__)
+
+
 @auth_review.route("/review_json", methods=["POST"])
 def review_json():
     print("レビュー")
@@ -131,11 +137,15 @@ def review_json():
         clean = int(clean)
         comfort = int(comfort)
         crowd = int(crowd)
+
         avg_rating = float(avg_rating)  # avg_ratingはNUMERIC型なのでfloatに変換
+        avg_rating = int(avg_rating)
+
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "数値が不正です"}), 400
 
     db = get_connection()
+
     try:
         cur = db.cursor()
         cur.execute(
@@ -144,11 +154,22 @@ def review_json():
             (user_id, shop_id, user_review, avg_rating,
              spicy_level, clean_level, " comfortable_level", " congestion_level", review_time)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+            
+    with db:
+        cur = db.cursor()
+        cur.execute(
+            """
+            INSERT INTO users_review
+            (user_id, shop_id, user_review, avg_rating,
+             spicy_level, clean_level, comfortable_level, congestion_level)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+
             """,
             (user_id, shop_id, review, avg_rating,
              spicy, clean, comfort, crowd)
         )
         db.commit()
+
         
         # 店舗の評価をレビューの平均から更新
         update_shop_ratings_from_reviews(db, shop_id)
@@ -169,3 +190,8 @@ def review_json():
     finally:
         if db:
             db.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "レビューを投稿することができました"
+    }), 201

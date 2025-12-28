@@ -6,7 +6,9 @@ from login import auth_bp
 from recommend import recommend_bp
 from add_shop import add_shop_bp
 from review import auth_review
+
 import psycopg2.extras
+
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)

@@ -57,7 +57,5 @@ coverage/
 .cursor/
 
 # デプロイ関連ドキュメント（オプション）
-# MOBILE_DEPLOY.md
-
-# 一時スクリプト（実行後は削除可能）
-# create_submitted_urls_table.py
+__pycache__/
+*.pyc
