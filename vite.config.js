@@ -11,10 +11,10 @@ export default defineConfig({
     // This fixes LAN/mobile access where `localhost` would point to the phone itself.
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://127.0.0.1:5001',
         changeOrigin: true,
         secure: false,
-        ws: true,
+        credentials: true,
       },
       '/search_shops_json': {
         target: 'http://127.0.0.1:5001',
@@ -28,6 +28,18 @@ export default defineConfig({
         credentials: true,
       },
       '/shop': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+        credentials: true,
+      },
+      '/review_json': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+        credentials: true,
+      },
+      '/recommend': {
         target: 'http://127.0.0.1:5001',
         changeOrigin: true,
         secure: false,

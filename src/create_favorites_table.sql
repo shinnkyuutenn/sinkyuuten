@@ -18,3 +18,4 @@ COMMENT ON TABLE public.user_favorites IS 'ユーザーのお気に入り店舗�
 COMMENT ON COLUMN public.user_favorites.user_id IS 'ユーザーID';
 COMMENT ON COLUMN public.user_favorites.shop_id IS '店舗ID';
 
+

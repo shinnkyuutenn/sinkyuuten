@@ -161,6 +161,16 @@ npm run preview
 - `POST /shop/delete_url_json` - URL削除（管理者専用）
 - `POST /shop/add_shop_json` - 店舗追加（ログイン必須）
 
+#### レビューAPI
+- `GET /review_json` - 店舗のレビュー一覧取得
+- `POST /review_json` - レビュー投稿（ログイン必須）
+
+#### レコメンドAPI（`/recommend` プレフィックス）
+- `GET /recommend/recommend_places` - ユーザー好みに基づく店舗推薦（ログイン必須）
+
+#### プロフィールAPI（`/auth` プレフィックス）
+- `POST /auth/update_profile_json` - プロフィール更新（アバター、個人設定）
+
 ## 🔑 API設定
 
 ### Google Maps API
@@ -201,6 +211,7 @@ const { isLoaded } = useJsApiLoader({
 - 現在地周辺検索
 - 都市別検索（Bombay、Hyderabad）
 - 条件フィルター検索
+- おすすめの場所（ユーザー好みに基づく店舗推薦、最大5店舗）
 
 ### 2. 検索フィルター
 - **キーワード検索**: 店舗名やキーワードで検索
@@ -230,9 +241,10 @@ const { isLoaded } = useJsApiLoader({
 - **ログアウト機能**
   - サイドメニューからログアウト可能
   - ログアウト後、お気に入りデータもクリア
-- **ユーザー情報表示**
-  - ログイン後、左上角にユーザー名を表示
-  - クリックでサイドメニューを開く
+- **ユーザー情報表示・管理**
+  - ログイン後、左上角にアバターを表示
+  - アバタークリックで個人情報ページへ直接アクセス
+  - 個人情報ページでアバター選択と個人設定の更新が可能
 
 ### 4. マップページ
 - Google Maps 統合
@@ -243,6 +255,8 @@ const { isLoaded } = useJsApiLoader({
 - 店舗詳細カード（70vh）と詳細ページ（90vh）の2段階表示
 - 画像カルーセル（マウスドラッグ・タッチスワイプ対応）
 - 店舗評価の4項目表示（辛さ、清潔度、快適度、混雑度）
+- ユーザーレビュー一覧表示
+- レビュー投稿機能
 
 ### 5. お気に入り機能
 - **お気に入り追加/削除**
@@ -263,7 +277,8 @@ const { isLoaded } = useJsApiLoader({
 - **ピン追加（管理者専用）**
   - 管理者ログイン後、右上角メニューに「ピン追加」オプションが表示
   - URL一覧から選択して店舗情報を入力
-  - 店舗名、タイプ、座標、評価レベル、写真URL、キーワードを入力
+  - 店舗名、タイプ、座標、写真URL、キーワードを入力
+  - 評価レベルは初期設定不要（ユーザーレビューの平均値から自動計算）
   - 追加成功後、URL送信者のお気に入りに自動追加
   - 新規キーワードは自動的にキーワードデータベースに同期
 
@@ -281,22 +296,31 @@ sinkyuuten/
 │   ├── india_reviews_schema.sql  # データベーススキーマ
 │   └── test_restaurants_data.sql # テストデータ
 ├── app.py                   # Flask サーバー（検索API + 認証API）
-├── login.py                 # Flask 認証ブループリント（ログイン・登録・お気に入り）
+├── login.py                 # Flask 認証ブループリント（ログイン・登録・お気に入り・プロフィール）
 ├── add_shop.py              # 店舗追加ブループリント（URL送信・ピン追加）
 ├── recommend.py             # レコメンド機能ブループリント
+├── review.py                # レビュー機能ブループリント
 ├── db.py                    # データベース接続
 ├── models.py                # データモデル
 ├── server.js                # Node.js Express サーバー
 ├── create_admin.py          # 管理者アカウント作成スクリプト
 ├── create_submitted_urls_table.py  # URL送信テーブル作成スクリプト
+├── add_avatar_column.py     # アバターカラム追加スクリプト
+├── remove_updated_at_trigger.py  # updated_atトリガー削除スクリプト
+├── reset_shop_ratings.py    # 店舗評価リセットスクリプト
+├── update_shop_ratings.py   # 店舗評価更新スクリプト
+├── start-mobile.sh          # モバイルデプロイ起動スクリプト
 ├── src/
 │   ├── create_favorites_table.sql  # お気に入りテーブル作成SQL
-│   └── create_submitted_urls_table.sql  # URL送信テーブル作成SQL
+│   ├── create_submitted_urls_table.sql  # URL送信テーブル作成SQL
+│   ├── add_user_avatar_column.sql  # アバターカラム追加SQL
+│   └── reset_shop_ratings.sql  # 店舗評価リセットSQL
 ├── dist/                    # ビルド出力
 ├── package.json             # Node.js 依存関係
 ├── vite.config.js          # Vite設定
 ├── tailwind.config.js      # Tailwind設定
-└── postcss.config.js       # PostCSS設定
+├── postcss.config.js       # PostCSS設定
+└── README.md               # プロジェクトドキュメント
 ```
 
 ## 🌐 モバイル対応
@@ -429,3 +453,42 @@ ISC
 - すべてのコメントを日本語に統一
 - 不要なコードの削除と簡素化
 - エラーハンドリングの改善
+- 再利用可能なコンポーネントの抽出（PreferenceSelector, RatingDisplay, KeywordsList）
+
+### レビュー機能の実装
+- **ユーザーレビュー機能**
+  - 店舗へのレビュー投稿機能（ログイン必須）
+  - レビューにはユーザー名、アバター、投稿日、評価（辛さ、清潔度、快適度、混雑度、総合評価）を含む
+  - 総合評価は0-5の範囲で0.5刻みで入力可能
+  - 店舗詳細ページでレビュー一覧を表示
+  - 店舗の評価はユーザーレビューの平均値から自動計算・更新
+- **レビューUI**
+  - シンプルなレビュー表示スタイル
+  - 評価タグ（辛さ、清潔度、快適度、混雑度、総合評価）を表示
+  - 総合評価をレビュー右上角に表示
+
+### プロフィール管理機能
+- **アバター選択機能**
+  - 10種類のデフォルトアバターから選択可能
+  - 選択したアバターが左上角に表示
+  - アバタークリックで個人情報ページへ直接アクセス
+- **個人設定の更新**
+  - 登録時に設定した個人設定（辛さ耐性、清潔重視度、快適度、混雑苦手度）を再設定可能
+  - アバター設定と個人設定を分離して管理
+
+### おすすめ機能
+- **店舗推薦機能**
+  - ユーザーの個人設定（辛さ、清潔度、快適度、混雑度）に基づいて店舗を推薦
+  - ホームページに「おすすめの場所」セクションを追加
+  - 最大5店舗を表示
+  - カードUIで画像、店舗名、評価、キーワードを表示
+  - マウスドラッグ・タッチスワイプ対応の横スクロール
+
+### 店舗評価システムの改善
+- 管理者のピン追加ページから初期評価設定を削除（デフォルトでNULL）
+- 店舗の評価はすべてユーザーレビューの平均値から自動計算
+- レビュー投稿時に自動的に店舗評価を更新
+
+### プロジェクト整理
+- 不要なファイルの削除（flask.log, MOBILE_ACCESS.md, MOBILE_DEPLOY_SIMPLE.md, __pycache__, templates）
+- プロジェクト構造の簡素化
