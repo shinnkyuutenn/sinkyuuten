@@ -102,11 +102,6 @@ def get_reviews_json():
         db.close()
 
 
-
-auth_review = Blueprint("auth_review", __name__)
-
-
-
 @auth_review.route("/review_json", methods=["POST"])
 def review_json():
     user_id = session.get("user_id")
@@ -133,6 +128,15 @@ def review_json():
                 INSERT INTO users_review
                 (user_id, shop_id, user_review, spicy_level, clean_level, comfortable_level, congestion_level, avg_rating, review_time)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, shop_id)
+                DO UPDATE SET
+                        user_review = EXCLUDED.user_review,
+                        spicy_level = EXCLUDED.spicy_level,
+                        clean_level = EXCLUDED.clean_level,
+                        comfortable_level = EXCLUDED.comfortable_level,
+                        congestion_level = EXCLUDED.congestion_level,
+                        avg_rating = EXCLUDED.avg_rating,
+                        review_time = CURRENT_TIMESTAMP
             """, (user_id, shop_id, review, spicy_level, clean_level, comfortable_level, congestion_level, avg_rating,))
         db.commit()
         return jsonify({"ok": True}), 201
