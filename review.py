@@ -79,8 +79,8 @@ def get_reviews_json():
                     ur.review_time,
                     ur.spicy_level,
                     ur.clean_level,
-                    ur." comfortable_level" as comfortable_level,
-                    ur." congestion_level" as congestion_level,
+                    ur.comfortable_level as comfortable_level,
+                    ur.congestion_level as congestion_level,
                     ur.avg_rating,
                     u.name as user_name,
                     u.avatar as user_avatar
@@ -106,92 +106,38 @@ def get_reviews_json():
 auth_review = Blueprint("auth_review", __name__)
 
 
+
 @auth_review.route("/review_json", methods=["POST"])
 def review_json():
-    print("レビュー")
-
     user_id = session.get("user_id")
     if not user_id:
-        return jsonify({"ok": False, "error": "ログインしてください"}), 401
+        return jsonify({"ok": False, "error": "login required"}), 401
 
     shop_id = request.form.get("shop_id")
     review = request.form.get("text")
     avg_rating = request.form.get("avg_rating")
 
-    spicy = request.form.get("spicy")
-    clean = request.form.get("clean")
-    comfort = request.form.get("comfort")
-    crowd = request.form.get("crowd")
+    spicy_level = request.form.get("spicy")
+    clean_level = request.form.get("clean")
+    comfortable_level = request.form.get("comfort")
+    congestion_level = request.form.get("crowd")
+    
 
-    if not review:
-        return jsonify({"ok": False, "error": "レビューが入力されていません"}), 400
-
-    if not avg_rating:
-        return jsonify({"ok": False, "error": "評価が記入されていません"}), 400
-
-    if not all([spicy, clean, comfort, crowd]):
-        return jsonify({"ok": False, "error": "項目が選択されていません"}), 400
-
-    try:
-        spicy = int(spicy)
-        clean = int(clean)
-        comfort = int(comfort)
-        crowd = int(crowd)
-
-        avg_rating = float(avg_rating)  # avg_ratingはNUMERIC型なのでfloatに変換
-        avg_rating = int(avg_rating)
-
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "数値が不正です"}), 400
+    if not shop_id or not review:
+        return jsonify({"ok": False, "error": "missing"}), 400
 
     db = get_connection()
-
     try:
-        cur = db.cursor()
-        cur.execute(
-            """
-            INSERT INTO public.users_review
-            (user_id, shop_id, user_review, avg_rating,
-             spicy_level, clean_level, " comfortable_level", " congestion_level", review_time)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
-            
-    with db:
-        cur = db.cursor()
-        cur.execute(
-            """
-            INSERT INTO users_review
-            (user_id, shop_id, user_review, avg_rating,
-             spicy_level, clean_level, comfortable_level, congestion_level)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-
-            """,
-            (user_id, shop_id, review, avg_rating,
-             spicy, clean, comfort, crowd)
-        )
+        with db.cursor() as cur:
+            cur.execute("""
+                INSERT INTO users_review
+                (user_id, shop_id, user_review, spicy_level, clean_level, comfortable_level, congestion_level, avg_rating, review_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """, (user_id, shop_id, review, spicy_level, clean_level, comfortable_level, congestion_level, avg_rating,))
         db.commit()
-
-        
-        # 店舗の評価をレビューの平均から更新
-        update_shop_ratings_from_reviews(db, shop_id)
-        
-        response = jsonify({
-            "ok": True,
-            "message": "レビューを投稿することができました"
-        })
-        response.status_code = 201
-        return response
+        return jsonify({"ok": True}), 201
     except Exception as e:
-        import traceback
-        error_msg = str(e)
-        traceback.print_exc()
-        print(f"レビュー投稿エラー: {error_msg}")
         db.rollback()
-        return jsonify({"ok": False, "error": f"レビューの投稿に失敗しました: {error_msg}"}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
     finally:
-        if db:
-            db.close()
-
-    return jsonify({
-        "ok": True,
-        "message": "レビューを投稿することができました"
-    }), 201
+        db.close()
