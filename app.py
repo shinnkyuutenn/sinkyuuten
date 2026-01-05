@@ -6,6 +6,8 @@ from login import auth_bp
 from recommend import recommend_bp
 from add_shop import add_shop_bp
 from review import auth_review
+from review_aggregate import review_aggregate_bp
+from articles import article_bp
 
 import psycopg2.extras
 
@@ -19,6 +21,8 @@ app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(recommend_bp, url_prefix="/recommend")
 app.register_blueprint(add_shop_bp, url_prefix="/shop")
 app.register_blueprint(auth_review)
+app.register_blueprint(review_aggregate_bp)
+app.register_blueprint(article_bp)
 
 
 def to_int_or_none(value):
