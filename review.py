@@ -5,55 +5,6 @@ import psycopg2.extras
 
 auth_review = Blueprint("auth_review", __name__)
 
-def update_shop_ratings_from_reviews(db, shop_id):
-    """店舗の評価をユーザーレビューの平均から計算して更新"""
-    try:
-        cur = db.cursor()
-        update_query = """
-            UPDATE public.shops s
-            SET 
-                spicy_level = CASE 
-                    WHEN review_stats.avg_spicy IS NOT NULL 
-                    THEN LEAST(5, GREATEST(1, ROUND(review_stats.avg_spicy)::integer))
-                    ELSE NULL 
-                END,
-                clean_level = CASE 
-                    WHEN review_stats.avg_clean IS NOT NULL 
-                    THEN LEAST(5, GREATEST(1, ROUND(review_stats.avg_clean)::integer))
-                    ELSE NULL 
-                END,
-                comfortable_level = CASE 
-                    WHEN review_stats.avg_comfortable IS NOT NULL 
-                    THEN LEAST(5, GREATEST(1, ROUND(review_stats.avg_comfortable)::integer))
-                    ELSE NULL 
-                END,
-                congestion_level = CASE 
-                    WHEN review_stats.avg_congestion IS NOT NULL 
-                    THEN LEAST(5, GREATEST(1, ROUND(review_stats.avg_congestion)::integer))
-                    ELSE NULL 
-                END,
-                avg_rating = review_stats.avg_avg_rating
-            FROM (
-                SELECT 
-                    shop_id,
-                    AVG(spicy_level)::numeric(3,2) as avg_spicy,
-                    AVG(clean_level)::numeric(3,2) as avg_clean,
-                    AVG(" comfortable_level")::numeric(3,2) as avg_comfortable,
-                    AVG(" congestion_level")::numeric(3,2) as avg_congestion,
-                    AVG(avg_rating)::numeric(3,2) as avg_avg_rating
-                FROM public.users_review
-                WHERE shop_id = %s
-                GROUP BY shop_id
-            ) review_stats
-            WHERE s.id = review_stats.shop_id
-        """
-        cur.execute(update_query, (shop_id,))
-        db.commit()
-    except Exception as e:
-        print(f"店舗評価の更新エラー: {e}")
-        # 評価の更新に失敗してもレビュー投稿は成功とする
-        db.rollback()
-
 @auth_review.route("/review_json", methods=["GET"])
 def get_reviews_json():
     """店舗のレビュー一覧を取得"""
