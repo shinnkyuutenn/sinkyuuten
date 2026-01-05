@@ -1,19 +1,9 @@
 from flask import Blueprint, request, jsonify, session
 import psycopg2
 import os
+from db import get_connection
 
 review_aggregate_bp = Blueprint("review_aggregate", __name__)
-
-
-def get_connection():
-    return psycopg2.connect(
-        host=os.environ["PGHOST"],
-        dbname=os.environ["PGDATABASE"],
-        user=os.environ["PGUSER"],
-        password=os.environ["PGPASSWORD"],
-        sslmode="require"
-    )
-
 
 @review_aggregate_bp.route("/reviews", methods=["POST"])
 def aggregate_review():
