@@ -1,4 +1,5 @@
 import os
+import base64
 from uuid import uuid4
 from flask import Blueprint, request, jsonify, session
 from werkzeug.utils import secure_filename
@@ -33,7 +34,35 @@ def time_ago(dt):
     return dt_jst.strftime("%Y-%m-%d %H:%M")
 
 
-#画像アップロードしてからURL化
+# 画像URLを完全なURL形式に変換するヘルパー関数
+def normalize_image_url(url):
+    """
+    相対パス（/static/uploads/xxx.jpg）を完全なURLに変換
+    既に完全なURL（http://, https://, data:）の場合はそのまま返す
+    """
+    if not url:
+        return url
+    
+    # 既に完全なURLの場合はそのまま返す
+    if url.startswith(('http://', 'https://', 'data:')):
+        return url
+    
+    # 相対パスの場合、完全なURLに変換
+    if url.startswith('/'):
+        try:
+            # requestオブジェクトが利用可能な場合、完全なURLを生成
+            base_url = request.url_root.rstrip('/')
+            return f"{base_url}{url}"
+        except RuntimeError:
+            # requestコンテキスト外の場合は相対パスのまま返す
+            # （通常は発生しないが、念のため）
+            return url
+    
+    # その他の場合はそのまま返す
+    return url
+
+
+#画像アップロードしてから完全なURL形式で返す
 @article_bp.route("/upload-image", methods=["POST"])
 def upload_image():
     try:
@@ -51,6 +80,13 @@ def upload_image():
         allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
         if ext not in allowed_extensions:
             return jsonify({"ok": False, "error": "許可されていないファイル形式です"}), 400
+
+        # ファイルサイズチェック（5MB以下）
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > 5 * 1024 * 1024:
+            return jsonify({"ok": False, "error": "画像サイズは5MB以下にしてください"}), 400
 
         filename = secure_filename(f"{uuid4()}{ext}")
         save_path = UPLOAD_DIR / filename
@@ -71,7 +107,10 @@ def upload_image():
         if not save_path.exists():
             return jsonify({"ok": False, "error": f"ファイルの保存に失敗しました（パス: {save_path}）"}), 500
 
-        image_url = f"/static/uploads/{filename}"
+        # 完全なURLを生成（プロトコル + ホスト + パス）
+        base_url = request.url_root.rstrip('/')
+        image_url = f"{base_url}/static/uploads/{filename}"
+        
         return jsonify({"ok": True, "url": image_url}), 201
     except Exception as e:
         print(f"画像アップロードエラー: {e}")
@@ -210,7 +249,7 @@ def list_articles():
                 {
                     "id": r[0],
                     "title": r[1],
-                    "thumbnail_url": r[2],
+                    "thumbnail_url": normalize_image_url(r[2]),
                     "created_at": time_ago(r[3]),  # 日本時間でフォーマット
                     "time_ago": time_ago(r[3]),
                     "is_favorite": r[4],
@@ -251,7 +290,7 @@ def list_my_articles():
                 {
                     "id": r[0],
                     "title": r[1],
-                    "thumbnail_url": r[2],
+                    "thumbnail_url": normalize_image_url(r[2]),
                     "created_at": time_ago(r[3]),  # 日本時間でフォーマット
                     "time_ago": time_ago(r[3]),
                     "is_favorite": r[4],
@@ -345,7 +384,7 @@ def get_article(article_id):
                 "id": r[0],
                 "title": r[1],
                 "body": r[2],
-                "thumbnail_url": r[3],
+                "thumbnail_url": normalize_image_url(r[3]),
                 "hashtags": hashtags,
                 "created_at": created_at_str,
                 "is_favorite": r[6],
@@ -491,7 +530,7 @@ def list_favorite_articles():
                 {
                     "id": r[0],
                     "title": r[1],
-                    "thumbnail_url": r[2],
+                    "thumbnail_url": normalize_image_url(r[2]),
                     "created_at": time_ago(r[3]),
                     "time_ago": time_ago(r[3]),
                     "status": r[4],
@@ -574,7 +613,7 @@ def search_articles():
                 {
                     "id": r[0],
                     "title": r[1],
-                    "thumbnail_url": r[2],
+                    "thumbnail_url": normalize_image_url(r[2]),
                     "created_at": time_ago(r[3]),  # 日本時間でフォーマット
                     "time_ago": time_ago(r[3]),
                     "is_favorite": r[4],
