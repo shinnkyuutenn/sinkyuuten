@@ -33,3 +33,7 @@ def reset_shop_ratings():
 if __name__ == "__main__":
     reset_shop_ratings()
 
+
+
+
+

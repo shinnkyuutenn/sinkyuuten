@@ -13,3 +13,7 @@ COMMENT ON COLUMN public.shops.comfortable_level IS '快適度レベル（1-5、
 COMMENT ON COLUMN public.shops.congestion_level IS '混雑度レベル（1-5、NULL = 未設定、ユーザーレビューの平均から自動計算）';
 COMMENT ON COLUMN public.shops.avg_rating IS '平均評価（0-5、NULL = 未設定、ユーザーレビューの平均から自動計算）';
 
+
+
+
+

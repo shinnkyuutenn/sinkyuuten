@@ -114,7 +114,7 @@ const cityLocations = {
 
 // API ベース URL
 // 開発時は同一オリジン（Vite proxy 経由）にして LAN/モバイルでも安定させる
-// 本番では VITE_API_BASE_URL を設定する
+// 本番では VITE_API_BASE_URL を設定する、未設定の場合は同一オリジンを使用
 const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || '');
 
 // city_id から座標を取得するヘルパー
@@ -199,7 +199,7 @@ function KeywordsList({ keywords, className = "" }) {
   );
 }
 
-function KeywordPicker({ keyword, setKeyword, availableKeywords, selectedKeywords, setSelectedKeywords }) {
+function KeywordPicker({ keyword, setKeyword, availableKeywords, selectedKeywords, setSelectedKeywords, onSearch }) {
   const suggestions = useMemo(() => {
     const q = (keyword || '').trim();
     if (!q) return [];
@@ -209,6 +209,14 @@ function KeywordPicker({ keyword, setKeyword, availableKeywords, selectedKeyword
       .filter((k) => k.toLowerCase().includes(lower))
       .slice(0, 8);
   }, [keyword, availableKeywords, selectedKeywords]);
+
+  // 入力されたキーワードが availableKeywords に存在するかチェック
+  const isKeywordInAvailable = useMemo(() => {
+    const q = (keyword || '').trim();
+    if (!q) return false;
+    const lower = q.toLowerCase();
+    return (availableKeywords || []).some((k) => k.toLowerCase() === lower);
+  }, [keyword, availableKeywords]);
 
   const addKeyword = (kw) => {
     const v = (kw || '').trim();
@@ -220,19 +228,32 @@ function KeywordPicker({ keyword, setKeyword, availableKeywords, selectedKeyword
     setKeyword('');
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = (keyword || '').trim();
+      if (!q) return;
+      
+      // 入力されたキーワードが availableKeywords に存在する場合、selectedKeywords に追加
+      if (isKeywordInAvailable) {
+        addKeyword(keyword);
+      } else {
+        // 存在しない場合、店名検索として使用（keyword パラメータで検索）
+        if (onSearch) {
+          onSearch();
+        }
+      }
+    }
+  };
+
   return (
     <div className="relative">
       <input
         value={keyword}
         onChange={(e) => setKeyword(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            addKeyword(keyword);
-          }
-        }}
+        onKeyDown={handleKeyDown}
         className="w-full px-4 py-3 rounded-xl bg-violet-50 border-none focus:outline-none focus:ring-2 focus:ring-violet-300 text-sm"
-        placeholder="キーワードを入力（Enterで追加）"
+        placeholder="キーワードを入力（Enterで検索/追加）"
       />
 
       {suggestions.length > 0 && (
@@ -398,6 +419,7 @@ function FilterPanel({ isOpen, onClose, filters, onFilterChange, selectedCity, o
             availableKeywords={availableKeywords}
             selectedKeywords={selectedKeywords}
             setSelectedKeywords={setSelectedKeywords}
+            onSearch={onSearch}
           />
 
           {/* keywords quick pick */}
@@ -476,6 +498,18 @@ function SideMenu({ isOpen, onClose, onNavigate, isLoggedIn, onLogout, isAdmin }
                       <circle cx="12" cy="10" r="3" />
                     </svg>
                     <span className="text-base font-medium">ピン追加</span>
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => onNavigate('articles')} className="w-full flex items-center gap-4 text-white py-4 px-2 hover:bg-white/10 rounded-lg transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                      <path d="M8 7h8" />
+                      <path d="M8 11h8" />
+                      <path d="M8 15h6" />
+                    </svg>
+                    <span className="text-base font-medium">記事管理</span>
                   </button>
                 </li>
               </>
@@ -654,6 +688,9 @@ function App() {
   const [favoriteShopIds, setFavoriteShopIds] = useState(new Set());
   const [favoriteShops, setFavoriteShops] = useState([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [favoriteArticleIds, setFavoriteArticleIds] = useState(new Set());
+  const [favoriteArticles, setFavoriteArticles] = useState([]);
+  const [isLoadingFavoriteArticles, setIsLoadingFavoriteArticles] = useState(false);
   
   // レストランデータ状態
   const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
@@ -692,6 +729,27 @@ function App() {
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
   const scrollLeftRef = useRef(0);
+  
+  // 自作記事状態
+  const [myArticles, setMyArticles] = useState([]);
+  const [isLoadingArticles, setIsLoadingArticles] = useState(false);
+  
+  // 記事管理ページ状態
+  const [adminArticles, setAdminArticles] = useState([]);
+  const [isLoadingAdminArticles, setIsLoadingAdminArticles] = useState(false);
+  const [isArticleFormOpen, setIsArticleFormOpen] = useState(false);
+  const [editingArticle, setEditingArticle] = useState(null);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [articleDetail, setArticleDetail] = useState(null);
+  const [isLoadingArticleDetail, setIsLoadingArticleDetail] = useState(false);
+  const [articleForm, setArticleForm] = useState({
+    title: '',
+    body: '',
+    thumbnail_url: '',
+    hashtags: [],
+    status: 'draft',
+  });
+  const [hashtagInput, setHashtagInput] = useState('');
 
   useEffect(() => {
     setActivePhotoIndex(0);
@@ -866,7 +924,8 @@ function App() {
     }
 
     const text = (reviewForm.text || '').trim();
-    const spicy = Number(reviewForm.spicy);
+    const isRestaurant = selectedRestaurant?.shop_type === 'restaurant';
+    const spicy = isRestaurant ? Number(reviewForm.spicy) : null;
     const clean = Number(reviewForm.clean);
     const comfort = Number(reviewForm.comfort);
     const crowd = Number(reviewForm.crowd);
@@ -876,7 +935,13 @@ function App() {
       alert('レビューを入力してください');
       return;
     }
-    if (![spicy, clean, comfort, crowd].every((n) => Number.isFinite(n) && n >= 1 && n <= 5)) {
+    
+    // 餐厅需要填写辣度，酒店和景点不需要
+    const requiredFields = isRestaurant 
+      ? [spicy, clean, comfort, crowd]
+      : [clean, comfort, crowd];
+    
+    if (!requiredFields.every((n) => Number.isFinite(n) && n >= 1 && n <= 5)) {
       alert('すべての評価項目を選択してください');
       return;
     }
@@ -889,7 +954,11 @@ function App() {
       const formData = new FormData();
       formData.append('shop_id', String(selectedRestaurant.id));
       formData.append('text', text);
-      formData.append('spicy', String(spicy));
+      if (isRestaurant) {
+        formData.append('spicy', String(spicy));
+      } else {
+        formData.append('spicy', ''); // 非餐厅时发送空字符串
+      }
       formData.append('clean', String(clean));
       formData.append('comfort', String(comfort));
       formData.append('crowd', String(crowd));
@@ -933,7 +1002,6 @@ function App() {
     try {
       setIsSearching(true);
       setSearchError(null);
-      // console.debug('searchShops start', { keyword, selectedTypes, selectedCity, filters });
       const sort = overrideSort || searchSort;
 
       const q =
@@ -957,8 +1025,6 @@ function App() {
         sort_dir: sort.dir,
       });
 
-      // console.debug('searchShops url', `/search_shops_json?${params}`);
-      // 開発時は同一オリジン（Vite proxy）で LAN/モバイルでも動作させる
       const res = await fetch(`/search_shops_json?${params}`);
       
       if (!res.ok) {
@@ -983,15 +1049,31 @@ function App() {
       setIsLoadingRestaurants(true);
       setRestaurantsError(null);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/restaurants`);
+        const apiUrl = `${API_BASE_URL}/api/restaurants`;
+        const response = await fetch(apiUrl, {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        
         if (!response.ok) {
-          throw new Error('データの取得に失敗しました');
+          const errorText = await response.text();
+          console.error('レストランデータ取得失敗:', response.status, response.statusText, errorText);
+          throw new Error(`データの取得に失敗しました (${response.status} ${response.statusText})`);
         }
+        
+        const contentType = response.headers.get('Content-Type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('レストランデータ取得 - 予期しないContent-Type:', contentType, 'レスポンス:', text.substring(0, 200));
+          throw new Error(`予期しないレスポンス形式: ${contentType}`);
+        }
+        
         const data = await response.json();
 
         // Neon/pg は NUMERIC を文字列で返すことがあるため数値へ正規化する
         // Google Maps の marker や表示整形が安定する
-        // デバッグログは本番衛生のため削除
         const restaurantsWithPosition = data.map(restaurant => {
           // keywords は配列として必ず保持（なければ空配列）
           const keywords = (restaurant.keywords && Array.isArray(restaurant.keywords)) ? restaurant.keywords : [];
@@ -1020,7 +1102,18 @@ function App() {
         setRestaurants(restaurantsWithPosition);
       } catch (error) {
         console.error('レストランデータ取得エラー:', error);
-        setRestaurantsError(error.message);
+        
+        // より詳細なエラーメッセージを表示
+        let errorMessage = 'データの取得に失敗しました';
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          errorMessage = 'ネットワークエラー: サーバーに接続できませんでした';
+        } else if (error.name === 'SyntaxError') {
+          errorMessage = 'データの解析に失敗しました';
+        }
+        
+        setRestaurantsError(errorMessage);
         setRestaurants([]);
       } finally {
         setIsLoadingRestaurants(false);
@@ -1031,6 +1124,25 @@ function App() {
     if (currentPage === 'map' || currentPage === 'home' || currentPage === 'detail') {
       fetchRestaurants();
     }
+  }, [currentPage]);
+
+  // マップページでスクロールを無効化
+  useEffect(() => {
+    if (currentPage === 'map' || currentPage === 'detail') {
+      // マップページでは body のスクロールを無効化
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      // 他のページではスクロールを有効化
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    }
+    
+    // クリーンアップ関数
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
   }, [currentPage]);
 
   // フィルター変更
@@ -1129,6 +1241,14 @@ function App() {
       if (isAdmin) {
         setSelectedUrlId(null); // URLリストに戻る
         setCurrentPage('add-pin');
+      } else {
+        // 一般ユーザーはアクセス不可
+        alert('この機能は管理者専用です');
+      }
+    } else if (pageId === 'articles') {
+      // 記事管理ページ（管理者のみメニューからアクセス可能）
+      if (isAdmin) {
+        setCurrentPage('articles');
       } else {
         // 一般ユーザーはアクセス不可
         alert('この機能は管理者専用です');
@@ -1294,6 +1414,8 @@ function App() {
     if (!isLoggedIn) {
       setFavoriteShopIds(new Set());
       setFavoriteShops([]);
+      setFavoriteArticleIds(new Set());
+      setFavoriteArticles([]);
       return;
     }
 
@@ -1320,6 +1442,38 @@ function App() {
 
     loadFavorites();
   }, [isLoggedIn]);
+
+  // お気に入り記事を取得
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setFavoriteArticleIds(new Set());
+      setFavoriteArticles([]);
+      return;
+    }
+
+    const loadFavoriteArticles = async () => {
+      setIsLoadingFavoriteArticles(true);
+      try {
+        const res = await fetch('/articles/favorites', {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const ids = new Set(data.map((a) => a.id));
+            setFavoriteArticleIds(ids);
+            setFavoriteArticles(data);
+          }
+        }
+      } catch (error) {
+        console.error('お気に入り記事取得エラー:', error);
+      } finally {
+        setIsLoadingFavoriteArticles(false);
+      }
+    };
+
+    loadFavoriteArticles();
+  }, [isLoggedIn, currentPage]);
 
   // プロフィールページに入る時、現在のユーザー情報を読み込む
   useEffect(() => {
@@ -1378,6 +1532,110 @@ function App() {
     fetchRecommendedShops();
   }, [currentPage, isLoggedIn, currentUser]);
 
+  // 記事詳細を開く（グローバル関数）
+  const handleOpenArticleDetail = async (article) => {
+    setSelectedArticle(article);
+    setIsLoadingArticleDetail(true);
+    try {
+      const res = await fetch(`/articles/${article.id}`, { credentials: 'include' });
+      const text = await res.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        console.error('記事詳細取得レスポンス解析エラー:', parseError, 'Response:', text);
+        alert('記事の取得に失敗しました');
+        setIsLoadingArticleDetail(false);
+        return;
+      }
+      
+        if (res.ok && data.id) {
+          setArticleDetail(data);
+          // お気に入り状態を更新
+          if (data.is_favorite) {
+            setFavoriteArticleIds(prev => new Set([...prev, data.id]));
+          }
+        } else {
+          alert(data.error || '記事の取得に失敗しました');
+        }
+    } catch (error) {
+      console.error('記事詳細取得エラー:', error);
+      alert('記事の取得に失敗しました: ' + error.message);
+    } finally {
+      setIsLoadingArticleDetail(false);
+    }
+  };
+
+  // 記事詳細を閉じる（グローバル関数）
+  const handleCloseArticleDetail = () => {
+    setSelectedArticle(null);
+    setArticleDetail(null);
+  };
+
+  // 記事管理ページで記事一覧を取得
+  useEffect(() => {
+    if (currentPage === 'articles' && isAdmin && isLoggedIn) {
+      const loadAdminArticles = async () => {
+        setIsLoadingAdminArticles(true);
+        try {
+          const res = await fetch('/articles', {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+              setAdminArticles(data);
+            } else {
+              setAdminArticles([]);
+            }
+          } else {
+            setAdminArticles([]);
+          }
+        } catch (error) {
+          console.error('記事一覧取得エラー:', error);
+          setAdminArticles([]);
+        } finally {
+          setIsLoadingAdminArticles(false);
+        }
+      };
+      loadAdminArticles();
+    }
+  }, [currentPage, isAdmin, isLoggedIn]);
+
+  // 記事一覧を取得（すべての公開記事）
+  useEffect(() => {
+    const fetchArticles = async () => {
+      if (currentPage !== 'home') {
+        setMyArticles([]);
+        return;
+      }
+
+      setIsLoadingArticles(true);
+      try {
+        const res = await fetch('/articles', {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setMyArticles(data);
+          } else {
+            setMyArticles([]);
+          }
+        } else {
+          setMyArticles([]);
+        }
+      } catch (error) {
+        console.error('記事取得エラー:', error);
+        setMyArticles([]);
+      } finally {
+        setIsLoadingArticles(false);
+      }
+    };
+
+    fetchArticles();
+  }, [currentPage]);
+
   // お気に入りに追加/削除
   const toggleFavorite = async (shopId) => {
     if (!isLoggedIn) {
@@ -1433,6 +1691,68 @@ function App() {
       }
     } catch (error) {
       console.error('お気に入り操作エラー:', error);
+    }
+  };
+
+  // 記事お気に入りに追加/削除
+  const toggleArticleFavorite = async (articleId) => {
+    if (!isLoggedIn) {
+      setPreviousPage(currentPage);
+      setCurrentPage('login');
+      return;
+    }
+
+    const isFavorite = favoriteArticleIds.has(articleId);
+    const method = isFavorite ? 'DELETE' : 'POST';
+    
+    try {
+      const res = await fetch(`/articles/${articleId}/favorite`, {
+        method,
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        const newIds = new Set(favoriteArticleIds);
+        if (isFavorite) {
+          newIds.delete(articleId);
+          setFavoriteArticles((prev) => prev.filter((a) => a.id !== articleId));
+        } else {
+          newIds.add(articleId);
+          // 記事情報を取得して追加
+          const article = myArticles.find((a) => a.id === articleId) || 
+                         (articleDetail && articleDetail.id === articleId ? articleDetail : null);
+          if (article) {
+            setFavoriteArticles((prev) => {
+              if (prev.find((a) => a.id === articleId)) return prev;
+              return [...prev, { ...article, is_favorite: true }];
+            });
+          } else {
+            // 記事情報が見つからない場合は、お気に入り一覧を再取得
+            const favRes = await fetch('/articles/favorites', {
+              credentials: 'include',
+            });
+            if (favRes.ok) {
+              const favData = await favRes.json();
+              if (Array.isArray(favData)) {
+                setFavoriteArticles(favData);
+              }
+            }
+          }
+        }
+        setFavoriteArticleIds(newIds);
+        
+        // 記事詳細のis_favoriteも更新
+        if (articleDetail && articleDetail.id === articleId) {
+          setArticleDetail(prev => ({ ...prev, is_favorite: !isFavorite }));
+        }
+      } else {
+        console.error('記事お気に入り操作エラー:', data.error);
+        alert(data.error || 'お気に入りの操作に失敗しました');
+      }
+    } catch (error) {
+      console.error('記事お気に入り操作エラー:', error);
+      alert('お気に入りの操作に失敗しました');
     }
   };
   
@@ -2043,23 +2363,81 @@ function App() {
           </div>
 
           <div className="px-6 py-4">
-            {isLoadingFavorites ? (
+            {!isLoggedIn ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <svg className="w-16 h-16 text-violet-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <p className="text-slate-500 text-sm mb-2">ログインが必要です</p>
+                <button
+                  onClick={() => {
+                    setPreviousPage('favorites');
+                    setCurrentPage('login');
+                  }}
+                  className="mt-4 px-6 py-2 bg-violet-500 text-white rounded-full hover:bg-violet-600 transition-colors"
+                >
+                  ログイン
+                </button>
+              </div>
+            ) : (isLoadingFavorites || isLoadingFavoriteArticles) ? (
               <div className="flex items-center justify-center py-12">
                 <p className="text-slate-500">読み込み中...</p>
               </div>
-            ) : favoriteShops.length === 0 ? (
+            ) : (favoriteShops.length === 0 && favoriteArticles.length === 0) ? (
               <div className="flex flex-col items-center justify-center py-16">
                 <svg className="w-16 h-16 text-violet-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                 </svg>
                 <p className="text-slate-500 text-sm">お気に入りがありません</p>
-                <p className="text-slate-400 text-xs mt-2">気になる店舗を追加してみましょう</p>
+                <p className="text-slate-400 text-xs mt-2">気になる店舗や記事を追加してみましょう</p>
               </div>
             ) : (
-              <div className="space-y-4 pb-6">
-                {favoriteShops.map((shop) => {
-                  const photos = parsePhotoUrls(shop.photo_url).slice(0, 3);
-                  return (
+              <div className="space-y-6 pb-6">
+                {/* お気に入り記事 */}
+                {favoriteArticles.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900 mb-4">お気に入り記事</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      {favoriteArticles.map((article) => (
+                        <div
+                          key={article.id}
+                          onClick={() => handleOpenArticleDetail(article)}
+                          className="bg-white rounded-xl shadow-[0_4px_12px_rgba(15,23,42,0.1)] border border-gray-100 overflow-hidden hover:shadow-[0_6px_16px_rgba(15,23,42,0.15)] transition-all duration-300 cursor-pointer flex flex-col"
+                        >
+                          <div className="relative h-32 w-full bg-gradient-to-br from-violet-100 to-purple-200 flex-shrink-0">
+                            {article.thumbnail_url ? (
+                              <img
+                                src={article.thumbnail_url}
+                                alt={article.title}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <svg className="w-8 h-8 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-3 space-y-1 flex-1 flex flex-col">
+                            <p className="text-xs font-semibold text-slate-900 line-clamp-2">{article.title}</p>
+                            <p className="text-[10px] text-slate-500 mt-auto">{article.time_ago}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* お気に入り店舗 */}
+                {favoriteShops.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900 mb-4">お気に入り店舗</h2>
+                    <div className="space-y-4">
+                      {favoriteShops.map((shop) => {
+                        const photos = parsePhotoUrls(shop.photo_url).slice(0, 3);
+                        return (
                     <button
                       key={shop.id}
                       type="button"
@@ -2177,8 +2555,11 @@ function App() {
                         </div>
                       </div>
                     </button>
-                  );
-                })}
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2597,11 +2978,488 @@ function App() {
     );
   }
 
+  // 記事管理ページ（管理者専用）
+  if (currentPage === 'articles') {
+    // 管理者チェック
+    if (!isAdmin) {
+      setCurrentPage('map');
+      return null;
+    }
+
+    // 記事作成/編集フォームのハンドラー
+    const handleOpenArticleForm = (article = null) => {
+      if (article) {
+        // 記事詳細を取得
+        fetch(`/articles/${article.id}`, { credentials: 'include' })
+          .then(async res => {
+            const text = await res.text();
+            let data;
+            try {
+              data = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+              console.error('JSON解析エラー:', parseError, 'Response:', text);
+              alert(`記事の取得に失敗しました: ${res.status} ${res.statusText}`);
+              return;
+            }
+            
+            if (!res.ok) {
+              alert(data.error || `記事の取得に失敗しました: ${res.status}`);
+              return;
+            }
+            
+            if (data.id) {
+              // hashtags の処理：PostgreSQL の配列はリストとして返される可能性がある
+              let hashtagsArray = [];
+              if (Array.isArray(data.hashtags)) {
+                hashtagsArray = data.hashtags;
+              } else if (data.hashtags) {
+                // 文字列やその他の形式の場合
+                try {
+                  hashtagsArray = JSON.parse(data.hashtags);
+                } catch {
+                  hashtagsArray = [data.hashtags];
+                }
+              }
+              
+              setEditingArticle(data);
+              setArticleForm({
+                title: data.title || '',
+                body: data.body || '',
+                thumbnail_url: data.thumbnail_url || '',
+                hashtags: hashtagsArray,
+                status: data.status || 'draft',
+              });
+              setHashtagInput(''); // ハッシュタグ入力欄をクリア
+              setIsArticleFormOpen(true);
+            } else {
+              console.error('記事データが不正です:', data);
+              alert('記事データが不正です');
+            }
+          })
+          .catch(err => {
+            console.error('記事取得エラー:', err);
+            alert('記事の取得に失敗しました: ' + err.message);
+          });
+      } else {
+        setEditingArticle(null);
+        setArticleForm({
+          title: '',
+          body: '',
+          thumbnail_url: '',
+          hashtags: [],
+          status: 'draft',
+        });
+        setHashtagInput('');
+        setIsArticleFormOpen(true);
+      }
+    };
+
+    const handleCloseArticleForm = () => {
+      setIsArticleFormOpen(false);
+      setEditingArticle(null);
+      setArticleForm({
+        title: '',
+        body: '',
+        thumbnail_url: '',
+        hashtags: [],
+        status: 'draft',
+      });
+      setHashtagInput('');
+    };
+
+    const handleAddHashtag = () => {
+      if (hashtagInput.trim() && !articleForm.hashtags.includes(hashtagInput.trim())) {
+        setArticleForm(prev => ({
+          ...prev,
+          hashtags: [...prev.hashtags, hashtagInput.trim()],
+        }));
+        setHashtagInput('');
+      }
+    };
+
+    const handleRemoveHashtag = (index) => {
+      setArticleForm(prev => ({
+        ...prev,
+        hashtags: prev.hashtags.filter((_, i) => i !== index),
+      }));
+    };
+
+    const handleUploadImage = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // ファイルサイズチェック（5MB以下）
+      if (file.size > 5 * 1024 * 1024) {
+        alert('画像サイズは5MB以下にしてください');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      try {
+        const res = await fetch('/upload-image', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+        
+        // レスポンステキストを先に取得
+        const text = await res.text();
+        let data;
+        
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+          console.error('JSON解析エラー:', parseError, 'Response:', text);
+          alert(`サーバーエラー: ${res.status} ${res.statusText}\n${text || '空のレスポンス'}`);
+          return;
+        }
+        
+        if (res.ok && data.ok && data.url) {
+          setArticleForm(prev => ({ ...prev, thumbnail_url: data.url }));
+          alert('画像のアップロードに成功しました');
+        } else {
+          alert(data.error || '画像のアップロードに失敗しました');
+        }
+      } catch (error) {
+        console.error('画像アップロードエラー:', error);
+        alert('画像のアップロードに失敗しました: ' + error.message);
+      }
+    };
+
+    const handleSubmitArticle = async () => {
+      if (!articleForm.title || !articleForm.body) {
+        alert('タイトルと本文は必須です');
+        return;
+      }
+
+      if (!articleForm.title.trim() || !articleForm.body.trim()) {
+        alert('タイトルと本文を入力してください');
+        return;
+      }
+
+      try {
+        const url = editingArticle 
+          ? `/articles/${editingArticle.id}`
+          : '/articles';
+        const method = editingArticle ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(articleForm),
+        });
+
+        let data;
+        try {
+          const text = await res.text();
+          data = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+          console.error('レスポンス解析エラー:', parseError);
+          alert(`サーバーエラー: ${res.status} ${res.statusText}`);
+          return;
+        }
+
+        if (res.ok && data.ok) {
+          alert(editingArticle ? '記事を更新しました' : '記事を作成しました');
+          handleCloseArticleForm();
+          // 記事一覧を再取得（少し遅延を入れて確実に取得）
+          setTimeout(async () => {
+            try {
+              const listRes = await fetch('/articles', { credentials: 'include' });
+              if (listRes.ok) {
+                const listData = await listRes.json();
+                if (Array.isArray(listData)) {
+                  setAdminArticles(listData);
+                } else {
+                  console.error('記事一覧が配列ではありません:', listData);
+                  setAdminArticles([]);
+                }
+              } else {
+                console.error('記事一覧取得失敗:', listRes.status, listRes.statusText);
+              }
+              
+              // 自作記事一覧も再取得（ホームページで表示される）
+              if (currentPage === 'home' || currentPage === 'articles') {
+                try {
+                  const myRes = await fetch('/articles/my', { credentials: 'include' });
+                  if (myRes.ok) {
+                    const myData = await myRes.json();
+                    if (Array.isArray(myData)) {
+                      setMyArticles(myData);
+                    }
+                  }
+                } catch (error) {
+                  console.error('自作記事一覧取得エラー:', error);
+                }
+              }
+            } catch (error) {
+              console.error('記事一覧取得エラー:', error);
+            }
+          }, 300);
+        } else {
+          alert(data.error || '記事の保存に失敗しました');
+        }
+      } catch (error) {
+        console.error('記事保存エラー:', error);
+        alert('記事の保存に失敗しました: ' + error.message);
+      }
+    };
+
+    const handleDeleteArticle = async (articleId) => {
+      if (!confirm('この記事を削除しますか？')) return;
+
+      try {
+        const res = await fetch(`/articles/${articleId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          alert('記事を削除しました');
+          // 記事一覧を再取得
+          const listRes = await fetch('/articles', { credentials: 'include' });
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            if (Array.isArray(listData)) {
+              setAdminArticles(listData);
+            }
+          }
+        } else {
+          alert(data.error || '記事の削除に失敗しました');
+        }
+      } catch (error) {
+        console.error('記事削除エラー:', error);
+        alert('記事の削除に失敗しました');
+      }
+    };
+
+    return (
+      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
+        <div className="mx-auto max-w-md w-full">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <button onClick={() => setCurrentPage('home')} className="p-2" aria-label="戻る">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            <h1 className="text-lg font-semibold text-slate-900">記事管理</h1>
+            <button 
+              onClick={() => handleOpenArticleForm()} 
+              className="p-2 text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+              aria-label="新規記事"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+            </button>
+          </div>
+
+          <div className="px-6 py-4">
+            {isLoadingAdminArticles ? (
+              <div className="text-center py-12 text-slate-500">読み込み中...</div>
+            ) : adminArticles.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                <p className="mb-4">記事がありません</p>
+                <button
+                  onClick={() => handleOpenArticleForm()}
+                  className="bg-violet-500 text-white px-6 py-2 rounded-full hover:bg-violet-600 transition-colors"
+                >
+                  新規記事を作成
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {adminArticles.map((article) => (
+                  <div key={article.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-start gap-4">
+                      {article.thumbnail_url && (
+                        <img 
+                          src={article.thumbnail_url} 
+                          alt={article.title}
+                          className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h3 className="font-semibold text-slate-900 line-clamp-2">{article.title}</h3>
+                          <span className={`text-xs px-2 py-1 rounded flex-shrink-0 ${
+                            article.status === 'published' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {article.status === 'published' ? '公開' : '下書き'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-3">{article.time_ago}</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOpenArticleForm(article)}
+                            className="flex-1 bg-violet-500 text-white text-sm py-2 rounded-lg hover:bg-violet-600 transition-colors"
+                          >
+                            編集
+                          </button>
+                          <button
+                            onClick={() => handleDeleteArticle(article.id)}
+                            className="flex-1 bg-red-500 text-white text-sm py-2 rounded-lg hover:bg-red-600 transition-colors"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 記事作成/編集モーダル */}
+        {isArticleFormOpen && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-6" onClick={handleCloseArticleForm}>
+            <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {editingArticle ? '記事を編集' : '新規記事を作成'}
+                </h2>
+                <button onClick={handleCloseArticleForm} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M4 4L16 16M16 4L4 16" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">タイトル *</label>
+                  <input
+                    type="text"
+                    value={articleForm.title}
+                    onChange={(e) => setArticleForm(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    placeholder="記事のタイトル"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">本文 *</label>
+                  <textarea
+                    value={articleForm.body}
+                    onChange={(e) => setArticleForm(prev => ({ ...prev, body: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 min-h-[200px] resize-none"
+                    placeholder="記事の本文"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">サムネイル画像</label>
+                  <div className="space-y-2">
+                    {articleForm.thumbnail_url && (
+                      <img src={articleForm.thumbnail_url} alt="Thumbnail" className="w-full h-48 object-cover rounded-lg" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadImage}
+                      className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">ハッシュタグ</label>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={hashtagInput}
+                      onChange={(e) => setHashtagInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddHashtag())}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      placeholder="ハッシュタグを入力してEnter"
+                    />
+                    <button
+                      onClick={handleAddHashtag}
+                      className="px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors"
+                    >
+                      追加
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {articleForm.hashtags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center gap-1 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-sm"
+                      >
+                        #{tag}
+                        <button
+                          onClick={() => handleRemoveHashtag(index)}
+                          className="hover:text-violet-900"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">ステータス</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setArticleForm(prev => ({ ...prev, status: 'draft' }))}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                        articleForm.status === 'draft'
+                          ? 'bg-amber-500 text-white shadow-md'
+                          : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                      }`}
+                    >
+                      下書き
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setArticleForm(prev => ({ ...prev, status: 'published' }))}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                        articleForm.status === 'published'
+                          ? 'bg-green-500 text-white shadow-md'
+                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                      }`}
+                    >
+                      公開
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 px-6 py-4 border-t border-gray-200">
+                <button
+                  onClick={handleCloseArticleForm}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSubmitArticle}
+                  className="flex-1 px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors"
+                >
+                  {editingArticle ? '更新' : '作成'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   // マップページ（検索結果オーバーレイもここで表示）
   if (currentPage === 'map' || currentPage === 'detail') {
     return (
-      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden">
-        <div className="mx-auto max-w-md min-h-screen flex flex-col relative w-full">
+      <main className="min-h-screen bg-white font-inter text-slate-900 w-full overflow-x-hidden overflow-y-hidden fixed inset-0">
+        <div className="mx-auto max-w-md h-full flex flex-col relative w-full">
           {!isDetailOpen && !isSearchOpen && (
             <div className="absolute top-32 inset-x-0 flex justify-center px-6 z-20">
             <div onClick={() => setIsFilterOpen(true)} className="flex w-full max-w-[280px] items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.15)] cursor-pointer">
@@ -2646,6 +3504,68 @@ function App() {
           )}
 
           <div className="absolute inset-0" style={{ zIndex: 1 }}>
+            {/* データ読み込み状態とエラー表示 */}
+            {isLoadingRestaurants && (
+              <div className="absolute top-32 left-1/2 transform -translate-x-1/2 z-30 bg-white/90 px-4 py-2 rounded-lg shadow-lg">
+                <p className="text-sm text-slate-600">店舗データを読み込み中...</p>
+              </div>
+            )}
+            {restaurantsError && (
+              <div className="absolute top-32 left-1/2 transform -translate-x-1/2 z-30 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg max-w-sm">
+                <p className="text-sm font-semibold mb-1">データ読み込みエラー</p>
+                <p className="text-xs mb-2">{restaurantsError}</p>
+                <button 
+                  onClick={() => {
+                    setRestaurantsError(null);
+                    const fetchRestaurants = async () => {
+                      setIsLoadingRestaurants(true);
+                      setRestaurantsError(null);
+                      try {
+                        const apiUrl = `${API_BASE_URL}/api/restaurants`;
+                        const response = await fetch(apiUrl, {
+                          credentials: 'include',
+                          headers: { 'Accept': 'application/json' },
+                        });
+                        if (!response.ok) {
+                          throw new Error(`データの取得に失敗しました (${response.status})`);
+                        }
+                        const data = await response.json();
+                        const restaurantsWithPosition = data.map(restaurant => {
+                          const keywords = (restaurant.keywords && Array.isArray(restaurant.keywords)) ? restaurant.keywords : [];
+                          const latitude = toNumberOrNull(restaurant.latitude);
+                          const longitude = toNumberOrNull(restaurant.longitude);
+                          const avgRating = toNumberOrNull(restaurant.avg_rating);
+                          return {
+                            ...restaurant,
+                            spicy_level: toNumberOrNull(restaurant.spicy_level),
+                            clean_level: toNumberOrNull(restaurant.clean_level),
+                            comfortable_level: toNumberOrNull(restaurant.comfortable_level),
+                            congestion_level: toNumberOrNull(restaurant.congestion_level),
+                            avg_rating: avgRating,
+                            latitude,
+                            longitude,
+                            position: restaurant.latitude && restaurant.longitude 
+                              ? { lat: latitude ?? getCityCoordinates(restaurant.city_id).lat, lng: longitude ?? getCityCoordinates(restaurant.city_id).lng }
+                              : getCityCoordinates(restaurant.city_id),
+                            keywords: keywords,
+                          };
+                        });
+                        setRestaurants(restaurantsWithPosition);
+                      } catch (error) {
+                        setRestaurantsError(error.message || 'データの取得に失敗しました');
+                        setRestaurants([]);
+                      } finally {
+                        setIsLoadingRestaurants(false);
+                      }
+                    };
+                    fetchRestaurants();
+                  }}
+                  className="text-xs bg-red-200 hover:bg-red-300 px-3 py-1 rounded transition-colors"
+                >
+                  再試行
+                </button>
+              </div>
+            )}
             {isLoaded ? (
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -2730,12 +3650,22 @@ function App() {
                     return undefined;
                   };
 
+                  // position が有効かチェック
+                  if (!restaurant.position || !restaurant.position.lat || !restaurant.position.lng) {
+                    return null;
+                  }
+
+                  const icon = createCustomIcon();
+                  if (!icon) {
+                    return null;
+                  }
+
                   return (
                     <Marker
                       key={restaurant.id}
                       position={restaurant.position}
-                      title={`${restaurant.name} - 評価: ${restaurant.avg_rating}`}
-                      icon={createCustomIcon()}
+                      title={`${restaurant.name} - 評価: ${restaurant.avg_rating || 'N/A'}`}
+                      icon={icon}
                       onClick={() => setSelectedRestaurant(restaurant)}
                     />
                   );
@@ -3354,9 +4284,9 @@ function App() {
                           />
                         </div>
 
-                        <div className="mt-4 grid grid-cols-4 gap-2">
+                        <div className={`mt-4 grid gap-2 ${selectedRestaurant?.shop_type === 'restaurant' ? 'grid-cols-4' : 'grid-cols-3'}`}>
                           {[
-                            { key: 'spicy', label: '辛さ' },
+                            ...(selectedRestaurant?.shop_type === 'restaurant' ? [{ key: 'spicy', label: '辛さ' }] : []),
                             { key: 'clean', label: '清潔度' },
                             { key: 'comfort', label: '快適度' },
                             { key: 'crowd', label: '混雑度' },
@@ -3709,6 +4639,97 @@ function App() {
                 );
               }
               
+              // 記事セクション
+              if (section.id === 'article') {
+                return (
+                  <div key={section.id} className="space-y-3">
+                    <p className="text-sm font-medium text-slate-700">{section.title}</p>
+                    {isLoadingArticles ? (
+                      <div className="text-center py-4 text-sm text-slate-500">読み込み中...</div>
+                    ) : myArticles.length === 0 ? (
+                      <div className="text-center py-4 text-sm text-slate-500">記事がありません</div>
+                    ) : (
+                          <div className="relative -mx-2 px-2">
+                            <div 
+                              className="flex gap-3 overflow-x-auto pb-2 hide-scrollbar"
+                              style={{
+                                scrollBehavior: 'smooth',
+                                WebkitOverflowScrolling: 'touch',
+                              }}
+                            >
+                              {myArticles.map((article, index) => (
+                                <div
+                                  key={article.id}
+                                  className="flex-shrink-0 w-[140px] bg-white rounded-xl shadow-[0_4px_12px_rgba(15,23,42,0.1)] border border-gray-100 overflow-hidden hover:shadow-[0_6px_16px_rgba(15,23,42,0.15)] transition-all duration-300 hover:scale-105 hover:-translate-y-1 flex flex-col"
+                                  style={{
+                                    animation: `fadeInUp 0.5s ease-out ${index * 0.1}s both`,
+                                  }}
+                                >
+                                  {/* 画像 */}
+                                  <div 
+                                    className="relative h-24 w-full bg-gradient-to-br from-violet-100 to-purple-200 flex-shrink-0 cursor-pointer"
+                                    onClick={() => handleOpenArticleDetail(article)}
+                                  >
+                                    {article.thumbnail_url ? (
+                                      <img
+                                        src={article.thumbnail_url}
+                                        alt={article.title}
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <svg className="w-8 h-8 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                      </div>
+                                    )}
+                                    {/* お気に入りボタン */}
+                                    {isLoggedIn && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleArticleFavorite(article.id);
+                                        }}
+                                        className={`absolute top-1 right-1 p-1.5 rounded-full transition-colors ${
+                                          (article.is_favorite || favoriteArticleIds.has(article.id))
+                                            ? 'bg-violet-500 text-white'
+                                            : 'bg-white/80 text-gray-600 hover:bg-white'
+                                        }`}
+                                        aria-label="お気に入り"
+                                      >
+                                        <svg 
+                                          width="14" 
+                                          height="14" 
+                                          viewBox="0 0 24 24" 
+                                          fill={(article.is_favorite || favoriteArticleIds.has(article.id)) ? 'currentColor' : 'none'} 
+                                          stroke="currentColor" 
+                                          strokeWidth="2.5" 
+                                          strokeLinecap="round" 
+                                          strokeLinejoin="round"
+                                        >
+                                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                  {/* 情報 */}
+                                  <div 
+                                    className="p-2.5 space-y-1.5 flex-1 flex flex-col cursor-pointer"
+                                    onClick={() => handleOpenArticleDetail(article)}
+                                  >
+                                    <p className="text-xs font-semibold text-slate-900 line-clamp-2">{article.title}</p>
+                                    <p className="text-[10px] text-slate-500 mt-auto">{article.time_ago}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                  </div>
+                );
+              }
+              
               // その他のセクション
               return (
                 <div key={section.id} className="space-y-3">
@@ -3765,6 +4786,129 @@ function App() {
           onSearch={searchShops}
         />
       </div>
+
+      {/* 記事詳細ページ */}
+      {selectedArticle && (
+        <div className="fixed inset-0 z-50 bg-gradient-to-b from-slate-50 to-white">
+          <div className="h-full max-w-3xl mx-auto bg-white shadow-xl overflow-y-auto">
+            {/* ヘッダー */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-200 z-10 px-6 py-4 flex items-center justify-between shadow-sm">
+              <button
+                onClick={handleCloseArticleDetail}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="閉じる"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-lg font-semibold text-slate-900">記事詳細</h1>
+              <div className="w-10"></div>
+            </div>
+
+            {/* コンテンツ */}
+            {isLoadingArticleDetail ? (
+              <div className="flex items-center justify-center py-32">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="text-slate-500 text-sm">読み込み中...</div>
+                </div>
+              </div>
+            ) : articleDetail ? (
+              <div className="px-6 py-8 space-y-8">
+                {/* サムネイル画像 */}
+                {articleDetail.thumbnail_url && (
+                  <div className="w-full h-80 bg-gradient-to-br from-violet-100 via-purple-100 to-pink-100 rounded-3xl overflow-hidden shadow-lg">
+                    <img
+                      src={articleDetail.thumbnail_url}
+                      alt={articleDetail.title}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                )}
+
+                {/* タイトルとメタ情報 */}
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-3xl font-bold text-slate-900 mb-4 leading-tight">{articleDetail.title}</h2>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>{articleDetail.time_ago || articleDetail.created_at}</span>
+                        </div>
+                        {articleDetail.status === 'draft' && (
+                          <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-semibold">下書き</span>
+                        )}
+                      </div>
+                      {/* お気に入りボタン */}
+                      {isLoggedIn && (
+                        <button
+                          onClick={() => toggleArticleFavorite(articleDetail.id)}
+                          className={`p-2 rounded-full transition-colors ${
+                            (articleDetail.is_favorite || favoriteArticleIds.has(articleDetail.id))
+                              ? 'bg-violet-100 text-violet-600 hover:bg-violet-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                          aria-label="お気に入り"
+                        >
+                          <svg 
+                            width="20" 
+                            height="20" 
+                            viewBox="0 0 24 24" 
+                            fill={(articleDetail.is_favorite || favoriteArticleIds.has(articleDetail.id)) ? 'currentColor' : 'none'} 
+                            stroke="currentColor" 
+                            strokeWidth="2.2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ハッシュタグ */}
+                  {articleDetail.hashtags && Array.isArray(articleDetail.hashtags) && articleDetail.hashtags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {articleDetail.hashtags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 px-4 py-2 rounded-full text-sm font-medium shadow-sm hover:shadow-md transition-shadow"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 本文 */}
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="prose prose-slate max-w-none">
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-base">
+                      {articleDetail.body}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-32">
+                <div className="text-center space-y-3">
+                  <svg className="w-16 h-16 mx-auto text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-slate-500">記事が見つかりませんでした</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 検索結果オーバーレイ（ホーム背景のまま表示） */}
       {isSearchOpen && (

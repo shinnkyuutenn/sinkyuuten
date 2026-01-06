@@ -45,6 +45,23 @@ export default defineConfig({
         secure: false,
         credentials: true,
       },
+      '/upload-image': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+        credentials: true,
+      },
+      '/articles': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+        credentials: true,
+      },
+      '/static': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 });

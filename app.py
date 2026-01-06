@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from models import search_shops
 import db
@@ -8,13 +8,38 @@ from add_shop import add_shop_bp
 from review import auth_review
 from review_aggregate import review_aggregate_bp
 from articles import article_bp
+import os
 
 import psycopg2.extras
 
 
-app = Flask(__name__)
-CORS(app, supports_credentials=True)
+app = Flask(__name__, static_folder='dist', static_url_path='')
+# CORS 設定：すべてのオリジンを許可（開発/モバイル環境用）
+# 注意：supports_credentials=True の場合、origins="*" は使用できない
+# そのため、after_request で動的に設定する
+CORS(app, 
+     supports_credentials=True,
+     resources={r"/*": {
+         "origins": "*",
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+         "expose_headers": ["Content-Type", "Authorization"]
+     }})
 app.secret_key = "your-secret-key"
+
+# CORS ヘッダーを動的に設定（credentials: true の場合、Origin を * にできない）
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+# 静态文件服务
+@app.route("/static/uploads/<path:filename>")
+def uploaded_file(filename):
+    return send_from_directory("static/uploads", filename)
 
 # ブループリント登録
 app.register_blueprint(auth_bp, url_prefix="/auth")
@@ -63,11 +88,21 @@ def search_shops_json():
     return jsonify(shops)
 
 
-@app.route("/api/restaurants", methods=["GET"])
+@app.route("/api/restaurants", methods=["GET", "OPTIONS"])
 def get_restaurants():
+    # CORS 预检请求处理
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        # credentials: true を使用する場合、Origin を * にできない
+        origin = request.headers.get('Origin', '*')
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
     """全レストランデータ取得API（キーワード含む）"""
-    conn = db.get_connection()
     try:
+        conn = db.get_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
             SELECT 
@@ -90,12 +125,22 @@ def get_restaurants():
             ORDER BY s.id
         """)
         restaurants = cur.fetchall()
-        return jsonify([dict(r) for r in restaurants])
+        result = [dict(r) for r in restaurants]
+        print(f"レストランデータ取得成功: {len(result)}件")
+        response = jsonify(result)
+        # CORS ヘッダーを追加（credentials: true を使用する場合、Origin を * にできない）
+        origin = request.headers.get('Origin', '*')
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
     except Exception as e:
         print(f"レストランデータ取得エラー: {e}")
-        return jsonify({"error": "レストランデータ取得失敗"}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"レストランデータ取得失敗: {str(e)}"}), 500
     finally:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
 
 @app.route("/api/keywords", methods=["GET"])
 def get_keywords():
@@ -112,10 +157,38 @@ def get_keywords():
     finally:
         conn.close()
 
-@app.route("/")
-def health():
-    return jsonify({"status": "ok"})
+# 前端静态文件服务（SPA路由支持）
+# 注意：这个路由必须在所有API路由之后定义，否则会拦截API请求
+@app.route("/", defaults={'path': ''})
+@app.route("/<path:path>")
+def serve_static(path):
+    # 如果是API路径，不应该到达这里（应该在API路由中处理）
+    # 但如果到达这里，说明API路由没有匹配，返回404
+    if path.startswith(('api/', 'auth/', 'recommend/', 'shop/', 'review_json', 'search_shops_json', 'upload-image', 'articles')):
+        from flask import abort
+        abort(404)
+    
+    # 静态文件路径（static/）直接返回文件
+    if path.startswith('static/'):
+        # static/uploads/ 已经在上面单独处理
+        # 其他 static/ 路径返回404或尝试从dist目录查找
+        file_path = os.path.join("dist", path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return send_from_directory("dist", path)
+        abort(404)
+    
+    # 检查是否是静态资源文件（assets目录等）
+    if path:
+        file_path = os.path.join("dist", path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return send_from_directory("dist", path)
+    
+    # 其他路径返回 index.html（SPA路由）
+    return send_file("dist/index.html")
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=5001)  # LANアクセス許可
+    # 生产环境：debug=False，开发环境：debug=True
+    import sys
+    debug_mode = '--debug' in sys.argv or os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5001)  # LANアクセス許可
