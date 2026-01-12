@@ -57,7 +57,19 @@ export default defineConfig({
         secure: false,
         credentials: true,
       },
+      '/recommended': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+        credentials: true,
+      },
       '/static': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        secure: false,
+      },
+      // /src/uploads/ 路径代理到 Flask（用于图片文件）
+      '/src/uploads': {
         target: 'http://127.0.0.1:5001',
         changeOrigin: true,
         secure: false,

@@ -23,3 +23,5 @@ COMMENT ON COLUMN public.user_favorites.shop_id IS '店舗ID';
 
 
 
+
+

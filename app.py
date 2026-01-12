@@ -8,6 +8,8 @@ from add_shop import add_shop_bp
 from review import auth_review
 from review_aggregate import review_aggregate_bp
 from articles import article_bp
+from recommended_reviews import recommended_reviews_bp
+
 import os
 
 import psycopg2.extras
@@ -41,6 +43,23 @@ def after_request(response):
 def uploaded_file(filename):
     return send_from_directory("static/uploads", filename)
 
+# src/uploads 目录的静态文件服务（新しい画像保存場所）
+# 如果 src/uploads 中不存在，则尝试从 static/uploads 读取（後方互換性）
+@app.route("/src/uploads/<path:filename>")
+def src_uploaded_file(filename):
+    src_path = os.path.join("src", "uploads", filename)
+    static_path = os.path.join("static", "uploads", filename)
+    
+    # まず src/uploads を試す
+    if os.path.exists(src_path) and os.path.isfile(src_path):
+        return send_from_directory("src/uploads", filename)
+    # src/uploads に存在しない場合、static/uploads を試す（後方互換性）
+    elif os.path.exists(static_path) and os.path.isfile(static_path):
+        return send_from_directory("static/uploads", filename)
+    else:
+        from flask import abort
+        abort(404)
+
 # ブループリント登録
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(recommend_bp, url_prefix="/recommend")
@@ -48,6 +67,8 @@ app.register_blueprint(add_shop_bp, url_prefix="/shop")
 app.register_blueprint(auth_review)
 app.register_blueprint(review_aggregate_bp)
 app.register_blueprint(article_bp)
+app.register_blueprint(recommended_reviews_bp)
+
 
 
 def to_int_or_none(value):
@@ -164,17 +185,28 @@ def get_keywords():
 def serve_static(path):
     # 如果是API路径，不应该到达这里（应该在API路由中处理）
     # 但如果到达这里，说明API路由没有匹配，返回404
-    if path.startswith(('api/', 'auth/', 'recommend/', 'shop/', 'review_json', 'search_shops_json', 'upload-image', 'articles')):
+    # 注意：不要在这里检查 shop/，因为 shop/ 路由由 add_shop_bp 处理
+    if path.startswith(('api/', 'auth/', 'recommend/', 'review_json', 'search_shops_json', 'upload-image', 'articles')):
         from flask import abort
         abort(404)
     
-    # 静态文件路径（static/）直接返回文件
+    # recommended 路由检查（不包含在 startswith 中，因为它是独立的路由）
+    if path == 'recommended':
+        from flask import abort
+        abort(404)
+    
+    # 静态文件路径（static/ 和 src/）直接返回文件
     if path.startswith('static/'):
         # static/uploads/ 已经在上面单独处理
         # 其他 static/ 路径返回404或尝试从dist目录查找
         file_path = os.path.join("dist", path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return send_from_directory("dist", path)
+        abort(404)
+    
+    # src/uploads/ 路径已经在上面单独处理，这里不应该到达
+    if path.startswith('src/uploads/'):
+        from flask import abort
         abort(404)
     
     # 检查是否是静态资源文件（assets目录等）

@@ -4,10 +4,84 @@
 from flask import Blueprint, request, session, jsonify
 from flask_cors import CORS
 import psycopg2.extras
+import logging
 from db import get_connection
+from google_places import get_place_id_url, get_shop_photo_url, get_shop_info_from_url
+
+# ロガー設定
+logger = logging.getLogger(__name__)
 
 add_shop_bp = Blueprint("add_shop", __name__)
 CORS(add_shop_bp, supports_credentials=True)
+
+# データベーススキーマの初期化（一度だけ実行）
+_SCHEMA_INITIALIZED = False
+
+
+def _ensure_schema_initialized(cur):
+    """データベーススキーマを初期化（必要に応じて）"""
+    global _SCHEMA_INITIALIZED
+    
+    if _SCHEMA_INITIALIZED:
+        return
+    
+    try:
+        # シーケンスを修正
+        cur.execute("""
+            SELECT setval('public.shops_id_seq', 
+                COALESCE((SELECT MAX(id) FROM public.shops), 0) + 1, 
+                false)
+        """)
+        
+        # source_urlカラムが存在するか確認し、存在しない場合は追加
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'shops' 
+                    AND column_name = 'source_url'
+                ) THEN
+                    ALTER TABLE public.shops 
+                    ADD COLUMN source_url VARCHAR(1000);
+                END IF;
+            END $$;
+        """)
+        
+        # photo_urlカラムの長さを確認し、必要に応じて拡張
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'shops' 
+                    AND column_name = 'photo_url'
+                    AND character_maximum_length = 500
+                ) THEN
+                    ALTER TABLE public.shops 
+                    ALTER COLUMN photo_url TYPE VARCHAR(2000);
+                END IF;
+            END $$;
+        """)
+        
+        _SCHEMA_INITIALIZED = True
+    except Exception as e:
+        # スキーマ初期化エラーは無視（既に初期化済みの可能性）
+        pass
+
+
+def _check_column_exists(cur, table_name, column_name):
+    """カラムが存在するかチェック"""
+    cur.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = %s 
+        AND column_name = %s
+    """, (table_name, column_name))
+    return cur.fetchone() is not None
 
 
 @add_shop_bp.route("/submit_url_json", methods=["POST"])
@@ -157,6 +231,111 @@ def delete_url_json():
         db.close()
 
 
+@add_shop_bp.route("/get_shop_photo_from_url", methods=["POST", "OPTIONS"])
+def get_shop_photo_from_url():
+    # CORS 预检请求处理
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    """Google Maps URLから店舗写真を取得（ログインユーザー）"""
+    # ログインチェック
+    if "user_id" not in session:
+        return jsonify({"ok": False, "error": "ログインが必要です"}), 401
+    
+    data = request.json
+    maps_url = data.get("maps_url", "").strip()
+    
+    if not maps_url:
+        return jsonify({"ok": False, "error": "Google Maps URLを入力してください"}), 400
+    
+    try:
+        # 1. Google Maps URLからplace_idを取得
+        place_id = get_place_id_url(maps_url)
+        if not place_id:
+            # デバッグ用：エラーメッセージにURLの一部を含める
+            return jsonify({
+                "ok": False,
+                "error": f"Google Maps URLから場所を取得できませんでした。URL: {maps_url[:100]}..."
+            }), 404
+        
+        # 2. place_idから写真URLを取得（最大3枚）
+        photo_result = get_shop_photo_url(place_id, max_photos=3)
+        if not photo_result:
+            return jsonify({
+                "ok": False,
+                "error": "店舗の写真が見つかりませんでした"
+            }), 404
+        
+        # 写真URLをリストに統一
+        if isinstance(photo_result, str):
+            photo_urls = [photo_result]
+        else:
+            photo_urls = photo_result
+        
+        return jsonify({
+            "ok": True,
+            "photo_urls": photo_urls,  # 常にリスト形式で返す
+            "place_id": place_id
+        }), 200
+        
+    except Exception as e:
+        logger.exception("Error in get_shop_photo_from_url")
+        return jsonify({
+            "ok": False,
+            "error": f"写真の取得に失敗しました: {str(e)}"
+        }), 500
+
+
+@add_shop_bp.route("/get_shop_info_from_url", methods=["POST", "OPTIONS"])
+def get_shop_info_from_url_endpoint():
+    # CORS 预检请求处理
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    """Google Maps URLから店舗情報を取得（名称、緯度、経度、写真URL）（ログインユーザー）"""
+    # ログインチェック
+    if "user_id" not in session:
+        return jsonify({"ok": False, "error": "ログインが必要です"}), 401
+    
+    data = request.json
+    maps_url = data.get("maps_url", "").strip()
+    
+    if not maps_url:
+        return jsonify({"ok": False, "error": "Google Maps URLを入力してください"}), 400
+    
+    try:
+        # Google Maps URLから店舗情報を取得
+        shop_info = get_shop_info_from_url(maps_url)
+        if not shop_info:
+            return jsonify({
+                "ok": False,
+                "error": "Google Maps URLから店舗情報を取得できませんでした"
+            }), 404
+        
+        return jsonify({
+            "ok": True,
+            "name": shop_info.get("name", ""),
+            "latitude": shop_info.get("latitude"),
+            "longitude": shop_info.get("longitude"),
+            "photo_urls": shop_info.get("photo_urls", [])
+        }), 200
+        
+    except Exception as e:
+        logger.exception("Error in get_shop_info_from_url_endpoint")
+        return jsonify({
+            "ok": False,
+            "error": f"店舗情報の取得に失敗しました: {str(e)}"
+        }), 500
+
+
 @add_shop_bp.route("/add_shop_json", methods=["POST"])
 def add_shop_json():
     """店舗を追加する（管理者または一般ユーザー）"""
@@ -190,6 +369,9 @@ def add_shop_json():
     
     # 写真URL（カンマ区切り、最大3つ）
     photo_url = data.get("photo_url", "").strip()
+    # データベースのVARCHAR(2000)制限に合わせて truncate（拡張後）
+    if len(photo_url) > 2000:
+        photo_url = photo_url[:2000]
     
     # キーワード（配列、最大4つ）
     keywords = data.get("keywords", [])
@@ -199,6 +381,12 @@ def add_shop_json():
     
     # 送信元URL（オプション）
     source_url = data.get("source_url", "").strip()
+    # データベースのVARCHAR(1000)制限に合わせて truncate（もしあれば）
+    if len(source_url) > 1000:
+        source_url = source_url[:1000]
+    # データベースのVARCHAR(500)制限に合わせて truncate（もしあれば）
+    if len(source_url) > 500:
+        source_url = source_url[:500]
     
     # 送信ユーザーID（URLを送信したユーザー、オプション）
     submitted_by_user_id = data.get("submitted_by_user_id", user_id)
@@ -208,20 +396,40 @@ def add_shop_json():
         with db:
             cur = db.cursor()
             
-            # 1. 店舗を追加
-            cur.execute(
-                """
-                INSERT INTO public.shops
-                (name, shop_type, city_id, latitude, longitude,
-                 spicy_level, clean_level, comfortable_level, congestion_level,
-                 photo_url, avg_rating)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (name, shop_type, city_id, latitude, longitude,
-                 spicy_level, clean_level, comfortable_level, congestion_level,
-                 photo_url, avg_rating)
-            )
+            # データベーススキーマを初期化（必要に応じて）
+            _ensure_schema_initialized(cur)
+            
+            # source_urlカラムが存在するかチェック
+            has_source_url = _check_column_exists(cur, 'shops', 'source_url')
+            
+            if has_source_url:
+                cur.execute(
+                    """
+                    INSERT INTO public.shops
+                    (name, shop_type, city_id, latitude, longitude,
+                     spicy_level, clean_level, comfortable_level, congestion_level,
+                     photo_url, avg_rating, source_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (name, shop_type, city_id, latitude, longitude,
+                     spicy_level, clean_level, comfortable_level, congestion_level,
+                     photo_url, avg_rating, source_url)
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO public.shops
+                    (name, shop_type, city_id, latitude, longitude,
+                     spicy_level, clean_level, comfortable_level, congestion_level,
+                     photo_url, avg_rating)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (name, shop_type, city_id, latitude, longitude,
+                     spicy_level, clean_level, comfortable_level, congestion_level,
+                     photo_url, avg_rating)
+                )
             shop_id = cur.fetchone()[0]
             
             # 2. キーワードを追加（既存のキーワードを使用、なければ作成）
@@ -250,31 +458,14 @@ def add_shop_json():
                     (shop_id, keyword_id)
                 )
             
-            # 3. 送信ユーザーIDを記録
-            try:
-                cur.execute(
-                    """
-                    DO $$ 
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns 
-                            WHERE table_schema = 'public' 
-                            AND table_name = 'shops' 
-                            AND column_name = 'submitted_by_user_id'
-                        ) THEN
-                            ALTER TABLE public.shops 
-                            ADD COLUMN submitted_by_user_id INTEGER;
-                        END IF;
-                    END $$;
-                    """
-                )
-                if submitted_by_user_id:
+            # 5. 送信ユーザーIDを記録
+            if submitted_by_user_id:
+                # submitted_by_user_idカラムが存在するかチェック
+                if _check_column_exists(cur, 'shops', 'submitted_by_user_id'):
                     cur.execute(
                         "UPDATE public.shops SET submitted_by_user_id = %s WHERE id = %s",
                         (submitted_by_user_id, shop_id)
                     )
-            except Exception:
-                pass  # カラムが既に存在する場合はスキップ
             
             # 4. URLを送信したユーザー（submitted_by_user_id）のお気に入りに自動追加
             # 管理者ではなく、URLを送信したユーザーにお気に入りを追加

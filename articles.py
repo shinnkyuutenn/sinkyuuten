@@ -11,7 +11,7 @@ article_bp = Blueprint("article", __name__)
 
 #画像アップロード設定（絶対パスを使用）
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "static" / "uploads"
+UPLOAD_DIR = BASE_DIR / "src" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 #時間表示（日本時間、分まで表示）
@@ -34,11 +34,13 @@ def time_ago(dt):
     return dt_jst.strftime("%Y-%m-%d %H:%M")
 
 
-# 画像URLを完全なURL形式に変換するヘルパー関数
+# 画像URLを正規化するヘルパー関数（相対パスのまま返す）
 def normalize_image_url(url):
     """
-    相対パス（/static/uploads/xxx.jpg）を完全なURLに変換
+    画像URLを正規化（相対パスのまま返す）
     既に完全なURL（http://, https://, data:）の場合はそのまま返す
+    古い /static/uploads/ パスは /src/uploads/ に変換
+    相対パスはそのまま返す（完全なURLに変換しない）
     """
     if not url:
         return url
@@ -47,18 +49,11 @@ def normalize_image_url(url):
     if url.startswith(('http://', 'https://', 'data:')):
         return url
     
-    # 相対パスの場合、完全なURLに変換
-    if url.startswith('/'):
-        try:
-            # requestオブジェクトが利用可能な場合、完全なURLを生成
-            base_url = request.url_root.rstrip('/')
-            return f"{base_url}{url}"
-        except RuntimeError:
-            # requestコンテキスト外の場合は相対パスのまま返す
-            # （通常は発生しないが、念のため）
-            return url
+    # 古い /static/uploads/ パスを新しい /src/uploads/ に変換
+    if url.startswith('/static/uploads/'):
+        url = url.replace('/static/uploads/', '/src/uploads/', 1)
     
-    # その他の場合はそのまま返す
+    # 相対パスはそのまま返す（完全なURLに変換しない）
     return url
 
 
@@ -107,9 +102,8 @@ def upload_image():
         if not save_path.exists():
             return jsonify({"ok": False, "error": f"ファイルの保存に失敗しました（パス: {save_path}）"}), 500
 
-        # 完全なURLを生成（プロトコル + ホスト + パス）
-        base_url = request.url_root.rstrip('/')
-        image_url = f"{base_url}/static/uploads/{filename}"
+        # 相対パスを返す（完全なURLに変換しない）
+        image_url = f"/src/uploads/{filename}"
         
         return jsonify({"ok": True, "url": image_url}), 201
     except Exception as e:
