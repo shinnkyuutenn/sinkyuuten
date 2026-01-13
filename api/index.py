@@ -73,5 +73,19 @@ except Exception as e:
             "trace": _initialization_error
         }), 500
 
+# 确保 app 不为 None
+if app is None:
+    from flask import Flask, jsonify
+    app = Flask(__name__)
+    
+    @app.route("/<path:path>")
+    def error_handler(path):
+        return jsonify({
+            "error": "Application initialization failed",
+            "message": "Flask app was not initialized properly",
+            "trace": _initialization_error or "Unknown error"
+        }), 500
+
 # Vercel Serverless Function handler
-# Vercel の Python runtime は Flask WSGI アプリを自動的に serverless function に変換する
+# Vercel Python runtime 3.11 会自动检测 Flask WSGI 应用
+# 直接导出 app 即可，Vercel 会自动处理
