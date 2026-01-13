@@ -27,6 +27,7 @@ Traceback:
 # 延迟导入 Flask 应用，带完整的错误处理
 app = None
 _initialization_error = None
+_initialization_exception = None
 
 try:
     # 步骤 1: 测试基础模块
@@ -61,6 +62,7 @@ try:
 
 except Exception as e:
     _initialization_error = log_error("应用初始化失败", e)
+    _initialization_exception = str(e)  # 保存异常信息到全局变量
     # 创建一个简单的错误处理 Flask 应用
     from flask import Flask, jsonify
     app = Flask(__name__)
@@ -69,7 +71,7 @@ except Exception as e:
     def error_handler(path):
         return jsonify({
             "error": "Application initialization failed",
-            "message": str(e),
+            "message": _initialization_exception,
             "trace": _initialization_error
         }), 500
 

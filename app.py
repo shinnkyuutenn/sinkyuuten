@@ -158,8 +158,15 @@ def get_restaurants():
     except Exception as e:
         print(f"レストランデータ取得エラー: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({"error": f"レストランデータ取得失敗: {str(e)}"}), 500
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        # より詳細なエラー情報を返す（デバッグ用）
+        return jsonify({
+            "error": "レストランデータ取得失敗",
+            "message": str(e),
+            "type": type(e).__name__,
+            "trace": error_trace
+        }), 500
     finally:
         if 'conn' in locals():
             conn.close()
@@ -167,17 +174,38 @@ def get_restaurants():
 @app.route("/api/keywords", methods=["GET"])
 def get_keywords():
     """全キーワード取得API"""
-    conn = db.get_connection()
     try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id, word FROM public.keywords ORDER BY word")
-        keywords = cur.fetchall()
-        return jsonify([dict(k) for k in keywords])
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT id, word FROM public.keywords ORDER BY word")
+            keywords = cur.fetchall()
+            return jsonify([dict(k) for k in keywords])
+        except Exception as e:
+            print(f"キーワード取得エラー: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            print(error_trace)
+            return jsonify({
+                "error": "キーワード取得失敗",
+                "message": str(e),
+                "type": type(e).__name__,
+                "trace": error_trace
+            }), 500
+        finally:
+            conn.close()
     except Exception as e:
-        print(f"キーワード取得エラー: {e}")
-        return jsonify({"error": "キーワード取得失敗"}), 500
-    finally:
-        conn.close()
+        # データベース接続エラー
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"データベース接続エラー: {e}")
+        print(error_trace)
+        return jsonify({
+            "error": "データベース接続失敗",
+            "message": str(e),
+            "type": type(e).__name__,
+            "trace": error_trace
+        }), 500
 
 @app.route("/api/test-db", methods=["GET"])
 def test_db():
