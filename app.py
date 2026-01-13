@@ -30,6 +30,27 @@ CORS(app,
      }})
 app.secret_key = "your-secret-key"
 
+# グローバルエラーハンドラー
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """すべての例外をキャッチしてJSON形式で返す"""
+    import traceback
+    error_trace = traceback.format_exc()
+    print(f"未処理の例外: {e}")
+    print(error_trace)
+    
+    # CORS ヘッダーを追加
+    response = jsonify({
+        "error": "Internal Server Error",
+        "message": str(e),
+        "type": type(e).__name__
+    })
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response, 500
+
 # CORS ヘッダーを動的に設定（credentials: true の場合、Origin を * にできない）
 @app.after_request
 def after_request(response):
