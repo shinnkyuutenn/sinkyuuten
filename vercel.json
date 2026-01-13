@@ -1,74 +1,63 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.11"
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/index.py"
+      "source": "/api/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/auth/(.*)",
-      "dest": "api/index.py"
+      "source": "/auth/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/recommend/(.*)",
-      "dest": "api/index.py"
+      "source": "/recommend/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/shop/(.*)",
-      "dest": "api/index.py"
+      "source": "/shop/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/review_json(.*)",
-      "dest": "api/index.py"
+      "source": "/review_json(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/search_shops_json(.*)",
-      "dest": "api/index.py"
+      "source": "/search_shops_json(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/upload-image(.*)",
-      "dest": "api/index.py"
+      "source": "/upload-image(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/articles/(.*)",
-      "dest": "api/index.py"
+      "source": "/articles/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/recommended(.*)",
-      "dest": "api/index.py"
+      "source": "/recommended(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/static/(.*)",
-      "dest": "api/index.py"
+      "source": "/static/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/src/uploads/(.*)",
-      "dest": "api/index.py"
+      "source": "/src/uploads/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot))",
-      "dest": "/$1"
+      "source": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot))",
+      "destination": "/$1"
     },
     {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  ],
-  "env": {
-    "PYTHON_VERSION": "3.11"
-  }
+  ]
 }
-
