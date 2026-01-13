@@ -1,6 +1,7 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "npm install && pip install -r requirements.txt",
   "functions": {
     "api/index.py": {
       "runtime": "python3.11"
