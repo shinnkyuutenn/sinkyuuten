@@ -69,11 +69,12 @@ def review_json():
     congestion_level = request.form.get("crowd")
     
     # 空字符串を None に変換（非餐厅の場合、spicy_level は空文字列で送信される）
-    spicy_level = None if (spicy_level == '' or spicy_level is None) else spicy_level
-    clean_level = None if (clean_level == '' or clean_level is None) else clean_level
-    comfortable_level = None if (comfortable_level == '' or comfortable_level is None) else comfortable_level
-    congestion_level = None if (congestion_level == '' or congestion_level is None) else congestion_level
-    avg_rating = None if (avg_rating == '' or avg_rating is None) else avg_rating
+    # 非空の場合は整数に変換
+    spicy_level = None if (spicy_level == '' or spicy_level is None) else int(spicy_level)
+    clean_level = None if (clean_level == '' or clean_level is None) else int(clean_level)
+    comfortable_level = None if (comfortable_level == '' or comfortable_level is None) else int(comfortable_level)
+    congestion_level = None if (congestion_level == '' or congestion_level is None) else int(congestion_level)
+    avg_rating = None if (avg_rating == '' or avg_rating is None) else float(avg_rating)
 
     if not shop_id or not review:
         return jsonify({"ok": False, "error": "missing"}), 400
