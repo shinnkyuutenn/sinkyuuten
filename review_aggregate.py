@@ -19,6 +19,26 @@ def aggregate_review():
     try:
         with conn:
             with conn.cursor() as cur:
+                # 处理非餐厅类型店铺的spicy_level（可能为None或空字符串）
+                spicy_level = data.get("spicy_level")
+                if spicy_level == '' or spicy_level is None:
+                    spicy_level = None
+                
+                clean_level = data.get("clean_level")
+                if clean_level == '' or clean_level is None:
+                    clean_level = None
+                
+                comfortable_level = data.get("comfortable_level")
+                if comfortable_level == '' or comfortable_level is None:
+                    comfortable_level = None
+                
+                congestion_level = data.get("congestion_level")
+                if congestion_level == '' or congestion_level is None:
+                    congestion_level = None
+                
+                avg_rating = data.get("avg_rating")
+                if avg_rating == '' or avg_rating is None:
+                    avg_rating = None
 
                 cur.execute("""
                     INSERT INTO users_review (
@@ -33,11 +53,11 @@ def aggregate_review():
                     user_id,
                     data["shop_id"],
                     data["user_review"],
-                    data["spicy_level"],
-                    data["clean_level"],
-                    data["comfortable_level"],
-                    data["congestion_level"],
-                    data["avg_rating"]
+                    spicy_level,
+                    clean_level,
+                    comfortable_level,
+                    congestion_level,
+                    avg_rating
                 ))
 
                 cur.execute("""
