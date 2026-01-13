@@ -1,12 +1,8 @@
 {
+  "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.11"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/test-simple",
