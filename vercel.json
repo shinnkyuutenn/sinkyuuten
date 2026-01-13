@@ -9,6 +9,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/test-simple",
+      "destination": "/api/test"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },

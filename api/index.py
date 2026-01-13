@@ -10,41 +10,68 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# 添加错误处理包装器
-def create_app():
-    """创建 Flask 应用，带错误处理"""
-    try:
-        # 测试关键模块是否可用
-        try:
-            import requests
-            print("✅ requests 模块已导入")
-        except ImportError as e:
-            print(f"❌ requests 模块导入失败: {e}")
-            raise
-        
-        # 导入 Flask 应用
-        from app import app
-        print("✅ Flask 应用导入成功")
-        
-        # 测试数据库连接（可选，不阻塞启动）
-        try:
-            import db
-            conn = db.get_connection()
-            conn.close()
-            print("✅ 数据库连接测试成功")
-        except Exception as e:
-            print(f"⚠️ 数据库连接测试失败（可能环境变量未设置）: {e}")
-        
-        return app
-    except Exception as e:
-        # 详细的错误信息
-        import traceback
-        error_msg = f"Flask アプリの初期化エラー: {e}\n{traceback.format_exc()}"
-        print(error_msg)
-        raise
+# 全局错误处理
+def log_error(context, error):
+    """统一的错误日志记录"""
+    import traceback
+    error_info = f"""
+=== {context} ===
+错误: {error}
+类型: {type(error).__name__}
+Traceback:
+{traceback.format_exc()}
+"""
+    print(error_info)
+    return error_info
 
-# 创建应用实例
-app = create_app()
+# 延迟导入 Flask 应用，带完整的错误处理
+app = None
+_initialization_error = None
+
+try:
+    # 步骤 1: 测试基础模块
+    print("步骤 1: 测试基础模块...")
+    try:
+        import requests
+        print("✅ requests 模块已导入")
+    except ImportError as e:
+        log_error("requests 模块导入失败", e)
+        raise
+    
+    # 步骤 2: 导入 Flask 应用
+    print("步骤 2: 导入 Flask 应用...")
+    try:
+        from app import app as flask_app
+        app = flask_app
+        print("✅ Flask 应用导入成功")
+    except Exception as e:
+        _initialization_error = log_error("Flask 应用导入失败", e)
+        raise
+    
+    # 步骤 3: 测试数据库连接（非阻塞）
+    print("步骤 3: 测试数据库连接...")
+    try:
+        import db
+        conn = db.get_connection()
+        conn.close()
+        print("✅ 数据库连接测试成功")
+    except Exception as e:
+        print(f"⚠️ 数据库连接测试失败（可能环境变量未设置）: {e}")
+        # 不抛出异常，允许应用继续运行
+
+except Exception as e:
+    _initialization_error = log_error("应用初始化失败", e)
+    # 创建一个简单的错误处理 Flask 应用
+    from flask import Flask, jsonify
+    app = Flask(__name__)
+    
+    @app.route("/<path:path>")
+    def error_handler(path):
+        return jsonify({
+            "error": "Application initialization failed",
+            "message": str(e),
+            "trace": _initialization_error
+        }), 500
 
 # Vercel Serverless Function handler
 # Vercel の Python runtime は Flask WSGI アプリを自動的に serverless function に変換する
