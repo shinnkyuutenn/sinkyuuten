@@ -178,6 +178,35 @@ def get_keywords():
     finally:
         conn.close()
 
+@app.route("/api/test-db", methods=["GET"])
+def test_db():
+    """データベース接続テストAPI（デバッグ用）"""
+    try:
+        import os
+        has_env = bool(os.getenv('NEON_DATABASE_URL') or os.getenv('DATABASE_URL'))
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1 as test, COUNT(*) as shop_count FROM public.shops")
+        result = cur.fetchone()
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "env_var_exists": has_env,
+            "db_connected": True,
+            "test_value": result[0],
+            "shop_count": result[1]
+        })
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"データベーステストエラー: {e}")
+        print(error_trace)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "trace": error_trace
+        }), 500
+
 # 前端静态文件服务（SPA路由支持）
 # 注意：这个路由必须在所有API路由之后定义，否则会拦截API请求
 @app.route("/", defaults={'path': ''})

@@ -41,15 +41,22 @@ def get_connection():
     
     if database_url:
         # 接続文字列を使用（Neon推奨）
-        result = urlparse(database_url)
-        return psycopg2.connect(
-            host=result.hostname,
-            database=result.path[1:] if result.path.startswith('/') else result.path,
-            user=result.username,
-            password=result.password,
-            port=result.port or 5432,
-            sslmode='require'
-        )
+        # channel_binding=require を除去（psycopg2 がサポートしていない場合がある）
+        clean_url = database_url.replace('&channel_binding=require', '').replace('?channel_binding=require', '')
+        # 直接接続文字列を使用（psycopg2 が自動的にパースする）
+        try:
+            return psycopg2.connect(clean_url)
+        except Exception as e:
+            # フォールバック: 手動パース
+            result = urlparse(clean_url)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:] if result.path.startswith('/') else result.path,
+                user=result.username,
+                password=result.password,
+                port=result.port or 5432,
+                sslmode='require'
+            )
     else:
         # 環境変数を使用（ローカル開発用）
         host = os.getenv('DB_HOST', 'localhost')

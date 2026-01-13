@@ -12,9 +12,6 @@ sys.path.insert(0, str(project_root))
 # 导入 Flask 应用
 from app import app
 
-# Vercel 会自动识别 Flask 应用
-# 如果需要自定义 handler，可以使用以下代码：
-# from vercel import Vercel
-# vercel = Vercel()
-# handler = vercel(app)
+# Vercel 的 @vercel/python 会自动识别 Flask 应用
+# 直接导出 app 即可，Vercel 会自动处理
 
