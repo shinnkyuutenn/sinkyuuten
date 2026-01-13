@@ -52,11 +52,26 @@ def aggregate_review():
                     FROM (
                       SELECT
                         shop_id,
-                        ROUND(AVG(spicy_level))        AS spicy_level,
-                        ROUND(AVG(clean_level))        AS clean_level,
-                        ROUND(AVG(comfortable_level)) AS comfortable_level,
-                        ROUND(AVG(congestion_level))  AS congestion_level,
-                        ROUND(AVG(avg_rating), 1)     AS avg_rating
+                        CASE 
+                          WHEN COUNT(spicy_level) > 0 THEN ROUND(AVG(spicy_level))
+                          ELSE NULL
+                        END AS spicy_level,
+                        CASE 
+                          WHEN COUNT(clean_level) > 0 THEN ROUND(AVG(clean_level))
+                          ELSE NULL
+                        END AS clean_level,
+                        CASE 
+                          WHEN COUNT(comfortable_level) > 0 THEN ROUND(AVG(comfortable_level))
+                          ELSE NULL
+                        END AS comfortable_level,
+                        CASE 
+                          WHEN COUNT(congestion_level) > 0 THEN ROUND(AVG(congestion_level))
+                          ELSE NULL
+                        END AS congestion_level,
+                        CASE 
+                          WHEN COUNT(avg_rating) > 0 THEN ROUND(AVG(avg_rating), 1)
+                          ELSE NULL
+                        END AS avg_rating
                       FROM users_review
                       WHERE shop_id = %s
                       GROUP BY shop_id
