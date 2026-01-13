@@ -45,18 +45,24 @@ def get_connection():
         clean_url = database_url.replace('&channel_binding=require', '').replace('?channel_binding=require', '')
         # 直接接続文字列を使用（psycopg2 が自動的にパースする）
         try:
-            return psycopg2.connect(clean_url)
+            # psycopg2.connect() は接続文字列を直接受け取れる
+            return psycopg2.connect(clean_url, sslmode='require')
         except Exception as e:
             # フォールバック: 手動パース
-            result = urlparse(clean_url)
-            return psycopg2.connect(
-                host=result.hostname,
-                database=result.path[1:] if result.path.startswith('/') else result.path,
-                user=result.username,
-                password=result.password,
-                port=result.port or 5432,
-                sslmode='require'
-            )
+            try:
+                result = urlparse(clean_url)
+                return psycopg2.connect(
+                    host=result.hostname,
+                    database=result.path[1:] if result.path.startswith('/') else result.path,
+                    user=result.username,
+                    password=result.password,
+                    port=result.port or 5432,
+                    sslmode='require'
+                )
+            except Exception as e2:
+                # エラーログを出力
+                print(f"データベース接続エラー: {e2}")
+                raise
     else:
         # 環境変数を使用（ローカル開発用）
         host = os.getenv('DB_HOST', 'localhost')

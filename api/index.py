@@ -11,8 +11,15 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # 导入 Flask 应用
-from app import app
+try:
+    from app import app
+except Exception as e:
+    # エラーハンドリング: インポートエラーをログに記録
+    import traceback
+    print(f"Flask アプリのインポートエラー: {e}")
+    print(traceback.format_exc())
+    raise
 
-# Vercel 的 @vercel/python 会自动识别 Flask WSGI 应用
-# 直接导出 app 即可
-
+# Vercel Serverless Function handler
+# Vercel の Python runtime は Flask WSGI アプリを自動的に serverless function に変換する
+# app を直接エクスポートすれば、Vercel が WSGI 変換を処理する
