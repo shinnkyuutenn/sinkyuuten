@@ -11,6 +11,7 @@ from articles import article_bp
 from recommended_reviews import recommended_reviews_bp
 
 import os
+import sys
 
 import psycopg2.extras
 
@@ -184,22 +185,53 @@ def test_db():
     try:
         import os
         has_env = bool(os.getenv('NEON_DATABASE_URL') or os.getenv('DATABASE_URL'))
-        conn = db.get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT 1 as test, COUNT(*) as shop_count FROM public.shops")
-        result = cur.fetchone()
-        conn.close()
+        
+        # 测试模块导入
+        modules_status = {
+            "requests": False,
+            "flask": False,
+            "psycopg2": False
+        }
+        try:
+            import requests
+            modules_status["requests"] = True
+        except:
+            pass
+        try:
+            import flask
+            modules_status["flask"] = True
+        except:
+            pass
+        try:
+            import psycopg2
+            modules_status["psycopg2"] = True
+        except:
+            pass
+        
+        # 测试数据库连接
+        db_status = {"connected": False, "error": None}
+        try:
+            conn = db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT 1 as test, COUNT(*) as shop_count FROM public.shops")
+            result = cur.fetchone()
+            conn.close()
+            db_status["connected"] = True
+            db_status["shop_count"] = result[1]
+        except Exception as db_error:
+            db_status["error"] = str(db_error)
+        
         return jsonify({
             "status": "success",
             "env_var_exists": has_env,
-            "db_connected": True,
-            "test_value": result[0],
-            "shop_count": result[1]
+            "modules": modules_status,
+            "database": db_status,
+            "python_version": sys.version
         })
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"データベーステストエラー: {e}")
+        print(f"テストエラー: {e}")
         print(error_trace)
         return jsonify({
             "status": "error",
