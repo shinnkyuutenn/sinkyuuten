@@ -17,6 +17,9 @@ import psycopg2.extras
 
 
 app = Flask(__name__, static_folder='dist', static_url_path='')
+# 禁用 Flask 的默认 HTML 错误页面，确保所有错误都返回 JSON
+app.config['PROPAGATE_EXCEPTIONS'] = True
+
 # CORS 設定：すべてのオリジンを許可（開発/モバイル環境用）
 # 注意：supports_credentials=True の場合、origins="*" は使用できない
 # そのため、after_request で動的に設定する

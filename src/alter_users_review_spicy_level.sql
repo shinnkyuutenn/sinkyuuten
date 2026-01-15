@@ -6,3 +6,6 @@ ALTER COLUMN spicy_level DROP NOT NULL;
 
 COMMENT ON COLUMN public.users_review.spicy_level IS '辛さレベル（1-5、NULL = 非餐厅类型の場合は不要）';
 
+
+
+

@@ -8,7 +8,6 @@ recommended_reviews_bp = Blueprint("recommended_reviews",__name__)
 def recommended_reviews():
     # CORS 预检请求处理
     if request.method == 'OPTIONS':
-        from flask import jsonify, request
         response = jsonify({})
         response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
         response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -77,8 +76,11 @@ def recommended_reviews():
             user_id
         ))
         rows = cur.fetchall()
+        
+        # デバッグ用：取得したレビュー数をログ出力
+        print(f"マッチング結果: {len(rows)}件")
 
-        # 結果が3つ未満の場合は、すべてのレビューを取得（マッチング条件なし）
+        # 結果が3つ未満の場合は、すべてのレビューを取得（マッチング条件なし、時間順）
         if len(rows) < 3:
             sql_all = """
             SELECT
@@ -106,43 +108,15 @@ def recommended_reviews():
             for row in rows_all:
                 if row["review_id"] not in existing_ids:
                     rows.append(row)
-                    if len(rows) >= 20:
-                        break
-
-        # 最低3つを確保
-        if len(rows) < 3:
-            # さらに緩い条件で取得（自分のレビューも含めるが、最後に除外）
-            sql_minimum = """
-            SELECT
-              ur.id AS review_id,
-              ur.user_id,
-              ur.user_review,
-              ur.review_time,
-              ur.shop_id,
-              ur.avg_rating,
-              COALESCE(u.name, '匿名ユーザー') AS reviewer_name,
-              0 AS distance,
-              0 AS matched_dimensions
-            FROM public.users_review ur
-            LEFT JOIN public.users u ON ur.user_id = u.id
-            ORDER BY ur.review_time DESC
-            LIMIT 20;
-            """
-            
-            cur.execute(sql_minimum)
-            rows_minimum = cur.fetchall()
-            
-            existing_ids = {row["review_id"] for row in rows}
-            for row in rows_minimum:
-                if row["review_id"] not in existing_ids and row["user_id"] != user_id:
-                    rows.append(row)
                     if len(rows) >= 3:
                         break
 
         MAX_DISTANCE = 16  # 4×(5-1) - すべての次元が設定されている場合の最大距離
 
+        print(f"最終結果: {len(rows)}件のレビュー")
+        
         results = []
-        for row in rows[:20]:  # 最大20件
+        for row in rows[:3]:  # 最大3件
             matched_dimensions = row.get("matched_dimensions", 0)
             distance = row.get("distance", 0)
             
@@ -162,13 +136,20 @@ def recommended_reviews():
                 "reviewer_id": row["user_id"],
                 "reviewer_name": row["reviewer_name"],
                 "review": row["user_review"],
-                "review_time": row["review_time"].isoformat(),
+                "review_time": row["review_time"].isoformat() if row["review_time"] else None,
                 "avg_rating": float(row["avg_rating"]) if row["avg_rating"] else None,
                 "match_percent": match_percent 
             })
+        
+        print(f"返却するレビュー数: {len(results)}件")
+        
+        return jsonify(results)
 
+    except Exception as e:
+        import traceback
+        print(f"エラーが発生しました: {e}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
     finally:
         if conn:
             conn.close()
-
-    return jsonify(results)
