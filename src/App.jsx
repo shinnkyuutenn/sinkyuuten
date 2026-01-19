@@ -5154,7 +5154,19 @@ function App() {
               if (section.id === 'latest') {
                 return (
                   <div key={section.id} className="space-y-3">
-                    <p className="text-sm font-medium text-slate-700">{section.title}</p>
+                    <p 
+                      className="text-sm font-medium text-slate-700 leading-tight" 
+                      style={{ 
+                        whiteSpace: 'nowrap', 
+                        letterSpacing: '0px', 
+                        wordSpacing: '0px', 
+                        wordBreak: 'keep-all', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis' 
+                      }}
+                    >
+                      {section.title}
+                    </p>
                     {!isLoggedIn ? (
                       <button 
                         onClick={() => {
@@ -5176,7 +5188,7 @@ function App() {
                             <p className="text-xs text-slate-400 mt-2">他のユーザーの口コミが表示されます</p>
                           </div>
                         ) : (
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             {recommendedReviews.slice(0, 3).map((review, index) => {
                               const shop = review.shop;
                               const reviewDate = review.review_time 
@@ -5205,11 +5217,11 @@ function App() {
                                       shop: shop
                                     });
                                   }}
-                                  className="w-full text-left bg-white rounded-lg border border-gray-200 p-3 hover:bg-gray-50 hover:border-gray-300 transition-all relative"
+                                  className="w-full text-left bg-white rounded-lg border border-gray-200 p-3 hover:bg-gray-50 hover:border-gray-300 transition-all relative overflow-hidden"
                                 >
                                   {/* 右上角：店铺类型 */}
                                   {shop && shop.shop_type && (
-                                    <div className="absolute top-3 right-3">
+                                    <div className="absolute top-3 right-3 z-10">
                                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">
                                         {getShopTypeLabel(shop.shop_type)}
                                       </span>
@@ -5221,19 +5233,37 @@ function App() {
                                       <span className="text-xs font-medium text-blue-600">{reviewDate || '日付不明'}</span>
                                     </div>
                                     {/* 右側：内容 */}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                        <span className="text-xs font-medium text-slate-900">
+                                    <div className="flex-1 min-w-0 overflow-hidden">
+                                      <div className="flex items-center gap-1.5 mb-1" style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                        <span className="text-xs font-medium text-slate-900 truncate">
                                           {review.reviewer_name || '匿名ユーザー'}
                                         </span>
                                         {review.match_percent !== undefined && (
-                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-semibold">
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-semibold whitespace-nowrap flex-shrink-0">
                                             {review.match_percent}% マッチ
                                           </span>
                                         )}
                                       </div>
-                                      <p className="text-xs text-slate-700 line-clamp-1">
-                                        {review.review || 'レビューなし'}
+                                      <p 
+                                        className="text-xs text-slate-700 review-text-clamp" 
+                                        style={{ 
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: 'vertical',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          wordBreak: 'break-word',
+                                          lineHeight: '1.4em',
+                                          maxHeight: '2.8em',
+                                          margin: 0,
+                                          padding: 0
+                                        }}
+                                      >
+                                        {review.review 
+                                          ? (review.review.length > 27 
+                                              ? review.review.substring(0, 27) + '...' 
+                                              : review.review)
+                                          : 'レビューなし'}
                                       </p>
                                     </div>
                                   </div>

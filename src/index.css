@@ -238,3 +238,37 @@ main {
 .filter-slider-gray::-moz-range-thumb {
   background: #6b7280;
 }
+
+/* 日文文本换行优化 - 防止单词在中间断开 */
+.japanese-text {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+/* 防止日文文本中的空白 */
+.japanese-text-no-space {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  letter-spacing: 0;
+  font-feature-settings: "liga" off;
+}
+
+/* 移动端评论卡片文本截断优化 */
+@media (max-width: 768px) {
+  /* 确保移动端文本正确截断 */
+  .review-text-clamp {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    word-break: break-word !important;
+    line-height: 1.4em !important;
+    max-height: 2.8em !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
