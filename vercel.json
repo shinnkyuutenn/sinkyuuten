@@ -15,6 +15,18 @@
   ],
   "routes": [
     {
+      "src": "/api/restaurants",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/api/keywords",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/api/test-db",
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/index.py"
     },
@@ -31,7 +43,15 @@
       "dest": "/api/index.py"
     },
     {
+      "src": "/review_json",
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/review/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/articles(.*)",
       "dest": "/api/index.py"
     },
     {
@@ -44,26 +64,6 @@
     },
     {
       "src": "/search_shops_json",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/api/restaurants",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/api/keywords",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/api/test-db",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/review_json",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/articles(.*)",
       "dest": "/api/index.py"
     },
     {
