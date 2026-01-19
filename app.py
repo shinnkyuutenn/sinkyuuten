@@ -20,6 +20,24 @@ app = Flask(__name__, static_folder='dist', static_url_path='')
 # 禁用 Flask 的默认 HTML 错误页面，确保所有错误都返回 JSON
 app.config['PROPAGATE_EXCEPTIONS'] = True
 
+# Session 設定（Vercel serverless 環境対応）
+# Vercel 環境では cookie-based session を使用（サーバーサイドストレージは使用不可）
+is_vercel = os.getenv('VERCEL') == '1'
+if is_vercel:
+    # Vercel 環境: クロスオリジン対応
+    app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS のみ
+    app.config['SESSION_COOKIE_HTTPONLY'] = True  # JavaScript からアクセス不可
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # クロスオリジン対応（Secure と組み合わせて使用）
+    app.config['SESSION_COOKIE_DOMAIN'] = None  # すべてのドメインで有効
+else:
+    # ローカル環境: より緩い設定
+    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_DOMAIN'] = None
+
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-change-in-production')
+
 # CORS 設定：すべてのオリジンを許可（開発/モバイル環境用）
 # 注意：supports_credentials=True の場合、origins="*" は使用できない
 # そのため、after_request で動的に設定する
@@ -31,7 +49,6 @@ CORS(app,
          "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
          "expose_headers": ["Content-Type", "Authorization"]
      }})
-app.secret_key = "your-secret-key"
 
 # グローバルエラーハンドラー
 @app.errorhandler(Exception)

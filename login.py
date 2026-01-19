@@ -126,15 +126,24 @@ def login_json():
         print("パスワード検証成功、セッション設定中...")
         # ログイン成功
         try:
+            session.permanent = True  # セッションを永続化
             session["user_id"] = user["id"]
             session["user_name"] = user["name"]
-            print(f"セッション設定成功: user_id={user['id']}")
+            print(f"セッション設定成功: user_id={user['id']}, session_id={session.get('_id', 'N/A')}")
         except Exception as session_error:
             print(f"セッション設定エラー: {session_error}")
             import traceback
             traceback.print_exc()
-            # セッション設定に失敗しても続行（一部の環境ではセッションが動作しない場合がある）
-            pass
+            # セッション設定に失敗した場合はエラーを返す
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
+            return jsonify({
+                "ok": False,
+                "error": f"セッション設定に失敗しました: {str(session_error)}"
+            }), 500
 
         result = jsonify({
             "ok": True,
