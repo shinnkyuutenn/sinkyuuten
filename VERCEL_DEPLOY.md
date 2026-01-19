@@ -127,6 +127,36 @@ sinkyuuten/
 
 ## 🔍 トラブルシューティング
 
+### 404 エラー（API エンドポイントが見つからない）
+
+**問題：** `/api/restaurants`、`/api/keywords`、`/articles` などが 404 を返す
+
+**原因：**
+1. Vercel の環境変数 `NEON_DATABASE_URL` が設定されていない
+2. `api/index.py` が正しく WSGI アプリをエクスポートしていない
+3. `vercel.json` のルーティング設定が不正確
+
+**解決策：**
+1. **環境変数の確認**
+   - Vercel ダッシュボードで `NEON_DATABASE_URL` が設定されているか確認
+   - 値が正しいか確認（接続文字列が完全か）
+   
+2. **api/index.py の確認**
+   - `api/index.py` が直接 `app` オブジェクトをエクスポートしているか確認
+   - 以下の形式であることを確認：
+   ```python
+   from app import app
+   # app オブジェクトが直接エクスポートされる
+   ```
+
+3. **vercel.json の確認**
+   - すべての API ルートが `/api/index.py` にルーティングされているか確認
+   - ルートの順序が正しいか確認（より具体的なルートが先に来る）
+
+4. **デプロイログの確認**
+   - Vercel のデプロイログでエラーがないか確認
+   - ビルドが成功しているか確認
+
 ### データベース接続エラー
 
 **問題：** `psycopg2.OperationalError` または接続タイムアウト
@@ -135,6 +165,7 @@ sinkyuuten/
 1. `NEON_DATABASE_URL` が正しく設定されているか確認
 2. Neon の **pooler** エンドポイントを使用しているか確認（`-pooler` が URL に含まれている）
 3. `channel_binding=require` パラメータが自動除去されているか確認（`db.py` で処理）
+4. Vercel の Functions ログでデータベース接続エラーの詳細を確認
 
 ### モジュールインポートエラー
 
@@ -143,6 +174,7 @@ sinkyuuten/
 **解決策：**
 1. `requirements.txt` に必要なパッケージがすべて含まれているか確認
 2. Vercel のビルドログを確認して、依存関係が正しくインストールされているか確認
+3. `api/index.py` の `sys.path.insert` が正しく設定されているか確認
 
 ### CORS エラー
 
@@ -151,6 +183,7 @@ sinkyuuten/
 **解決策：**
 1. `app.py` の CORS 設定を確認
 2. Vercel のドメインが CORS 設定に含まれているか確認
+3. `credentials: true` を使用している場合、`Origin` ヘッダーが正しく処理されているか確認
 
 ### 静的ファイルが表示されない
 
@@ -160,6 +193,7 @@ sinkyuuten/
 1. `npm run build` を実行して `dist/` ディレクトリを生成
 2. `vercel.json` の `routes` 設定を確認
 3. 静的ファイルのパスが正しいか確認
+4. `package.json` の `build` スクリプトが正しく設定されているか確認
 
 ## 📝 注意事項
 

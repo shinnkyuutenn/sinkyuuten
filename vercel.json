@@ -63,7 +63,7 @@
       "dest": "/api/index.py"
     },
     {
-      "src": "/articles",
+      "src": "/articles(.*)",
       "dest": "/api/index.py"
     },
     {
