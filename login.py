@@ -59,19 +59,24 @@ def login_json():
         email = request.form.get("email")
         password = request.form.get("password")
 
+        print(f"ログイン試行: email={email}")
+
         if not email or not password:
             return jsonify({
                 "ok": False,
                 "error": "email または password が未入力です"
             }), 400
 
+        print("データベース接続を試みます...")
         db = get_connection()
         if not db:
+            print("データベース接続失敗")
             return jsonify({
                 "ok": False,
                 "error": "データベース接続に失敗しました"
             }), 500
 
+        print("データベース接続成功、ユーザー検索中...")
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
             "SELECT id, name, email, password_hash, avatar, spicy_level, clean_level, comfortable_level, congestion_level FROM users WHERE email = %s",
@@ -80,6 +85,7 @@ def login_json():
         user = cur.fetchone()
 
         if user is None:
+            print(f"ユーザーが見つかりません: {email}")
             if db:
                 try:
                     db.close()
@@ -90,8 +96,10 @@ def login_json():
                 "error": "メールアドレスが違います"
             }), 401
 
+        print(f"ユーザーが見つかりました: id={user.get('id')}, name={user.get('name')}")
         password_hash = user.get("password_hash") if user else None
         if not password_hash:
+            print("パスワードハッシュが見つかりません")
             if db:
                 try:
                     db.close()
@@ -102,7 +110,9 @@ def login_json():
                 "error": "パスワードハッシュが見つかりません"
             }), 500
 
+        print("パスワード検証中...")
         if not check_password(password, password_hash):
+            print("パスワードが一致しません")
             if db:
                 try:
                     db.close()
@@ -113,9 +123,18 @@ def login_json():
                 "error": "パスワードが違います"
             }), 401
 
+        print("パスワード検証成功、セッション設定中...")
         # ログイン成功
-        session["user_id"] = user["id"]
-        session["user_name"] = user["name"]
+        try:
+            session["user_id"] = user["id"]
+            session["user_name"] = user["name"]
+            print(f"セッション設定成功: user_id={user['id']}")
+        except Exception as session_error:
+            print(f"セッション設定エラー: {session_error}")
+            import traceback
+            traceback.print_exc()
+            # セッション設定に失敗しても続行（一部の環境ではセッションが動作しない場合がある）
+            pass
 
         result = jsonify({
             "ok": True,
@@ -137,14 +156,17 @@ def login_json():
             except:
                 pass
         
+        print("ログイン成功")
         return result
     except Exception as e:
         print(f"ログインエラー: {e}")
         import traceback
-        traceback.print_exc()
+        error_trace = traceback.format_exc()
+        print(error_trace)
         return jsonify({
             "ok": False,
-            "error": f"ログイン処理中にエラーが発生しました: {str(e)}"
+            "error": f"ログイン処理中にエラーが発生しました: {str(e)}",
+            "type": type(e).__name__
         }), 500
     finally:
         if db:
