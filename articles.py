@@ -10,9 +10,21 @@ from pathlib import Path
 article_bp = Blueprint("article", __name__)
 
 #画像アップロード設定（絶対パスを使用）
+# Vercel環境では /tmp を使用（書き込み可能）、ローカルでは src/uploads を使用
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "src" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+if os.getenv('VERCEL'):
+    # Vercel環境: /tmp ディレクトリを使用
+    UPLOAD_DIR = Path('/tmp/uploads')
+else:
+    # ローカル環境: src/uploads ディレクトリを使用
+    UPLOAD_DIR = BASE_DIR / "src" / "uploads"
+
+# ディレクトリ作成を試みる（失敗しても続行）
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError):
+    # Vercel環境などでディレクトリ作成に失敗した場合は無視
+    pass
 
 #時間表示（日本時間、分まで表示）
 def time_ago(dt):
@@ -86,8 +98,12 @@ def upload_image():
         filename = secure_filename(f"{uuid4()}{ext}")
         save_path = UPLOAD_DIR / filename
         
-        # ディレクトリが存在することを確認
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        # ディレクトリ作成を試みる（失敗しても続行）
+        try:
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            # Vercel環境などでディレクトリ作成に失敗した場合は無視
+            pass
         
         # ファイルを保存
         try:
