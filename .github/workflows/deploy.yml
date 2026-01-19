@@ -55,7 +55,7 @@ jobs:
   deploy:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
     
     steps:
       - name: Checkout code
@@ -81,4 +81,19 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
           working-directory: ./
+  
+  deploy-skip:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN == ''
+    
+    steps:
+      - name: Skip deployment
+        run: |
+          echo "⚠️ Vercel deployment skipped: VERCEL_TOKEN secret is not configured"
+          echo "📝 To enable automatic deployment, please configure the following secrets in GitHub:"
+          echo "   - VERCEL_TOKEN"
+          echo "   - VERCEL_ORG_ID"
+          echo "   - VERCEL_PROJECT_ID"
+          echo "📖 See CI_CD_SETUP.md for detailed instructions"
 
