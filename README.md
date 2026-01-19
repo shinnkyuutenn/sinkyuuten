@@ -97,7 +97,49 @@ pip install -r requirements.txt
 python app.py
 ```
 
-### 5. フロントエンド開発サーバーの起動
+### 5. Vercel へのデプロイ（オプション）
+
+このプロジェクトは Vercel にデプロイできます。
+
+#### 5.1 環境変数の設定
+
+Vercel ダッシュボードで以下の環境変数を設定してください：
+
+**必須環境変数：**
+- `NEON_DATABASE_URL`: Neon PostgreSQL データベース接続文字列
+  ```
+  postgresql://neondb_owner:npg_OAtX7RldPb3L@ep-snowy-star-a1ncts7u-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+  ```
+- `GOOGLE_MAPS_API_KEY`: Google Maps API キー（オプション、デフォルト値あり）
+
+**設定方法：**
+1. Vercel ダッシュボードにログイン
+2. プロジェクトを選択
+3. Settings → Environment Variables に移動
+4. 上記の環境変数を追加
+
+#### 5.2 デプロイ
+
+```bash
+# Vercel CLI をインストール（初回のみ）
+npm i -g vercel
+
+# プロジェクトをデプロイ
+vercel
+
+# 本番環境にデプロイ
+vercel --prod
+```
+
+または、GitHub リポジトリを Vercel に接続して自動デプロイを設定することもできます。
+
+#### 5.3 注意事項
+
+- Vercel の無料プランでは serverless function の実行時間に制限があります
+- データベース接続は接続プーリングを使用することを推奨します（Neon の pooler エンドポイントを使用）
+- 静的ファイル（画像など）は Vercel の CDN で配信されます
+
+### 6. フロントエンド開発サーバーの起動
 
 ```bash
 npm run dev
@@ -714,3 +756,15 @@ ISC
 ### プロジェクト整理
 - 不要なファイルの削除（flask.log, MOBILE_ACCESS.md, MOBILE_DEPLOY_SIMPLE.md, __pycache__, templates）
 - プロジェクト構造の簡素化
+
+### Vercel デプロイ対応
+- **Vercel 設定ファイルの追加**
+  - `vercel.json` を作成（Flask アプリを serverless function としてデプロイ）
+  - `api/index.py` を作成（Vercel Python runtime 用の WSGI ラッパー）
+  - すべての API ルートを Vercel serverless function にルーティング
+- **環境変数設定**
+  - `NEON_DATABASE_URL` または `DATABASE_URL` を Vercel 環境変数に設定
+  - `GOOGLE_MAPS_API_KEY` を設定（オプション）
+- **デプロイ手順**
+  - Vercel CLI を使用してデプロイ可能
+  - GitHub リポジトリを接続して自動デプロイも可能

@@ -23,3 +23,4 @@ COMMENT ON COLUMN public.shops.avg_rating IS '平均評価（0-5、NULL = 未設
 
 
 
+

@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/auth/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/recommend/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/shop/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/review/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/article/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/recommended",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/search_shops_json",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/api/restaurants",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/api/keywords",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/api/test-db",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/review_json",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/articles",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/upload-image",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/static/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/src/uploads/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.11"
+  }
+}
+

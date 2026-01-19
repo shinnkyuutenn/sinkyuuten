@@ -9,3 +9,4 @@ COMMENT ON COLUMN public.users_review.spicy_level IS '辛さレベル（1-5、NU
 
 
 
+
