@@ -768,3 +768,5 @@ ISC
 - **デプロイ手順**
   - Vercel CLI を使用してデプロイ可能
   - GitHub リポジトリを接続して自動デプロイも可能
+
+<!-- CI/CD configured -->
