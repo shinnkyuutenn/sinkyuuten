@@ -188,40 +188,51 @@ def login_json():
 @auth_bp.route("/register_json", methods=["POST"])
 def register_json():
     """ユーザー登録API"""
-
-    name = request.form.get("name")
-    email = request.form.get("email")
-    password = request.form.get("password")
-
-    spicy_level = request.form.get("spicy_level")
-    clean_level = request.form.get("clean_level")
-    comfortable_level = request.form.get("comfortable_level")
-    congestion_level = request.form.get("congestion_level")
-
-    # ---- バリデーション ----
-    if not name or len(name) < 3:
-        return jsonify({"ok": False, "error": "名前が短すぎます"}), 400
-
-    if not email or "@" not in email:
-        return jsonify({"ok": False, "error": "メール形式が不正です"}), 400
-
-    if not password:
-        return jsonify({"ok": False, "error": "パスワード未入力"}), 400
-
-    if not all([spicy_level, clean_level, comfortable_level, congestion_level]):
-        return jsonify({"ok": False, "error": "評価項目が未入力です"}), 400
-    
-    # 数値に変換
+    db = None
     try:
-        spicy_level = int(spicy_level)
-        clean_level = int(clean_level)
-        comfortable_level = int(comfortable_level)
-        congestion_level = int(congestion_level)
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "評価項目は1-5の数値で入力してください"}), 400
+        name = request.form.get("name")
+        email = request.form.get("email")
+        password = request.form.get("password")
 
-    db = get_connection()
-    with db:
+        spicy_level = request.form.get("spicy_level")
+        clean_level = request.form.get("clean_level")
+        comfortable_level = request.form.get("comfortable_level")
+        congestion_level = request.form.get("congestion_level")
+
+        print(f"新規登録試行: email={email}, name={name}")
+
+        # ---- バリデーション ----
+        if not name or len(name) < 3:
+            return jsonify({"ok": False, "error": "名前が短すぎます"}), 400
+
+        if not email or "@" not in email:
+            return jsonify({"ok": False, "error": "メール形式が不正です"}), 400
+
+        if not password:
+            return jsonify({"ok": False, "error": "パスワード未入力"}), 400
+
+        if not all([spicy_level, clean_level, comfortable_level, congestion_level]):
+            return jsonify({"ok": False, "error": "評価項目が未入力です"}), 400
+        
+        # 数値に変換
+        try:
+            spicy_level = int(spicy_level)
+            clean_level = int(clean_level)
+            comfortable_level = int(comfortable_level)
+            congestion_level = int(congestion_level)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "評価項目は1-5の数値で入力してください"}), 400
+
+        print("データベース接続を試みます...")
+        db = get_connection()
+        if not db:
+            print("データベース接続失敗")
+            return jsonify({
+                "ok": False,
+                "error": "データベース接続に失敗しました"
+            }), 500
+
+        print("データベース接続成功、ユーザー登録処理を開始...")
         cur = db.cursor()
 
         # メール重複チェック
@@ -230,13 +241,21 @@ def register_json():
             (email,)
         )
         if cur.fetchone():
+            print(f"メールアドレスが既に登録されています: {email}")
+            if db:
+                try:
+                    db.close()
+                except:
+                    pass
             return jsonify({
                 "ok": False,
                 "error": "すでに登録されています"
             }), 409
 
+        print("パスワードハッシュを生成中...")
         password_hash = hash_password(password)
 
+        print("ユーザー情報をデータベースに挿入中...")
         cur.execute(
             """
             INSERT INTO users
@@ -250,11 +269,35 @@ def register_json():
             )
         )
         db.commit()
+        print("ユーザー登録が完了しました")
 
-    return jsonify({
-        "ok": True,
-        "message": "ユーザー登録が完了しました"
-    }), 201
+        result = jsonify({
+            "ok": True,
+            "message": "ユーザー登録が完了しました"
+        })
+        
+        if db:
+            try:
+                db.close()
+            except:
+                pass
+        
+        return result, 201
+    except Exception as e:
+        print(f"新規登録エラー: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        if db:
+            try:
+                db.close()
+            except:
+                pass
+        return jsonify({
+            "ok": False,
+            "error": f"ユーザー登録処理中にエラーが発生しました: {str(e)}",
+            "type": type(e).__name__
+        }), 500
 
 
 
