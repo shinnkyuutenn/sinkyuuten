@@ -4936,7 +4936,7 @@ function App() {
                         className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
                       >
                         <img src={lockIcon} alt="Lock" className="h-4 w-4" />
-                        <span className="font-medium">アカウント登録で表示</span>
+                        <span className="font-medium text-xs">アカウント登録で表示</span>
                       </button>
                     ) : (
                       <>
@@ -5176,7 +5176,7 @@ function App() {
                         className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
                       >
                         <img src={lockIcon} alt="Lock" className="h-4 w-4" />
-                        <span className="font-medium">アカウント登録で表示</span>
+                        <span className="font-medium text-xs">アカウント登録で表示</span>
                       </button>
                     ) : (
                       <>
@@ -5291,7 +5291,7 @@ function App() {
                       className="flex w-[60%] mx-auto items-center justify-center gap-2 rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(124,58,237,0.4)]"
                     >
                       <img src={lockIcon} alt="Lock" className="h-4 w-4" />
-                      <span className="font-medium">アカウント登録で表示</span>
+                      <span className="font-medium text-xs">アカウント登録で表示</span>
                     </button>
                   )}
                 </div>
